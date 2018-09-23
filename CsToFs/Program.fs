@@ -105,15 +105,97 @@ type FsharpSyntax =
 type FileContentsDumper() = 
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
 
-    //let mutable program = {UsingStatements = []; Classes = []; Interfaces = []; Namespace= []}
-    
+    let rec parseExpressSyntax (node:ExpressionSyntax) = 
+        //node.ChildNodes() |> Seq.iter (fun x -> 
+        //    x |> printfn "%A"
+        //    x.GetType() |> printfn "%A"
+        //    x.Kind() |> printfn "%A")
 
-    let parseStatementDeclaration (node:ExpressionStatementSyntax) = 
+        //node.ChildNodes() |> Seq.map (fun x -> 
+            //match x with 
+            //| :? AssignmentExpressionSyntax 
+
+            //) 
+
+        match node with 
+        | :? InvocationExpressionSyntax as x -> sprintf "%s" <| x.WithoutTrivia().ToFullString() 
+        | :? AssignmentExpressionSyntax as x -> 
+            let result = x.WithoutTrivia().ToFullString()
+
+            match x.Kind() with  
+            | SyntaxKind.SimpleAssignmentExpression ->  result.Replace("=", "<-")
+            | SyntaxKind.AddAssignmentExpression -> 
+
+                let isPlusEquals = 
+                    x.ChildTokens() |> Seq.exists (fun x -> x.Kind() = SyntaxKind.PlusEqualsToken)
+
+                let right =
+                    if isPlusEquals then 
+                        let paramList = 
+                            x.Right.ChildNodes() 
+                            |> Seq.filter (fun x -> x.Kind() = SyntaxKind.ParameterList) 
+                            |> Seq.map (fun x -> x.ChildNodes() |> Seq.last)
+                            |> Seq.map (fun x -> x.WithoutTrivia().ToFullString())
+                            |> String.concat ""
+
+                        let otherNodes = 
+                            x.Right.ChildNodes() 
+                            |> Seq.filter (fun x -> x.Kind() <> SyntaxKind.ParameterList) 
+                            |> Seq.map (fun x -> 
+                                match x with 
+                                | :? AssignmentExpressionSyntax as x -> parseExpressSyntax x
+                                | _ -> x.WithoutTrivia().ToFullString()) 
+
+                                |> String.concat ";"
+
+                        sprintf "%s -> %s" paramList otherNodes
+                    else 
+                        x.Right.ChildNodes() 
+                        |> Seq.map (fun x -> 
+                            match x with 
+                            | :? AssignmentExpressionSyntax as x -> parseExpressSyntax x
+                            | _ -> x.WithoutTrivia().ToFullString()) 
+
+                            |> String.concat ";"
+
+                let left = 
+                    x.Left.ChildNodes() |> Seq.map (fun x -> 
+                        match x with 
+                        | :? AssignmentExpressionSyntax as x -> parseExpressSyntax x
+                        | _ -> x.WithoutTrivia().ToFullString()) |> String.concat "."
+
+                if isPlusEquals then 
+                    sprintf "%s.Add (fun %s )" left right
+                else sprintf "%s <- %s" left right
+
+                //result.Replace(" +=", ".Add (fun")
+            | _ -> result
+        | _ -> node.WithoutTrivia().ToFullString()
+
+    let parseExpressionStatement (node:ExpressionStatementSyntax) = 
         
-        let result = node.WithoutTrivia().ToFullString()
-        if node.Expression.Kind() = SyntaxKind.SimpleAssignmentExpression then 
-            result.Replace("=", "<-")
-        else result
+        //printfn "%A" <| node.Expression.Kind()
+        //printfn "%A" <| node.Expression.GetType()
+        parseExpressSyntax node.Expression
+
+
+
+    let parseLocalDeclarationStatement (node:LocalDeclarationStatementSyntax) = 
+        //match node.Declaration with 
+        //| :? VariableDeclaratorSyntax as x -> parseVaribleDeclaration x
+        //| x -> printfn "%A" <| x.GetType(); x.ToFullString()
+        sprintf "let %s" <| node.Declaration.Variables.ToFullString()
+
+
+    let parseStatements (node:StatementSyntax) = 
+        if node.Kind() = SyntaxKind.ReturnStatement then 
+            node.ChildTokens() |> printfn "%A"
+            node.ToFullString().Replace("return ", "")
+        else 
+            match node with 
+            | :? LocalDeclarationStatementSyntax as x -> parseLocalDeclarationStatement x
+            | :? ExpressionStatementSyntax as x -> parseExpressionStatement x
+            | x -> printfn "%A" <| x.GetType(); x.ToFullString()
 
 
     member this.VisitNamespaceDeclaration (node:NamespaceDeclarationSyntax ) = 
@@ -263,7 +345,8 @@ type FileContentsDumper() =
                 |> Seq.toList
             Method.Body = 
                 node.Body.Statements 
-                |> Seq.map (fun x -> x.WithoutTrailingTrivia().WithoutLeadingTrivia().ToFullString().Replace(";", ""))
+                |> Seq.map parseStatements
+                //|> Seq.map (fun x -> x.WithoutTrailingTrivia().WithoutLeadingTrivia().ToFullString().Replace(";", ""))
                 |> Seq.toList
         }
 
@@ -283,12 +366,6 @@ type FileContentsDumper() =
 
     member this.VisitPropertyDeclaration (node:PropertyDeclarationSyntax) = 
 
-        let parseStatements (node:StatementSyntax) = 
-            if node.Kind() = SyntaxKind.ReturnStatement then 
-                node.ChildTokens() |> printfn "%A"
-                node.ToFullString().Replace("return ", "")
-            else 
-                parseStatementDeclaration (node :?> ExpressionStatementSyntax)
 
         let parseAccessorDeclaration (node:AccessorDeclarationSyntax) = 
             node.Body 
