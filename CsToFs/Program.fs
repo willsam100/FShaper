@@ -35,6 +35,7 @@ type Method = {
 
 type Prop = {
     Name:string
+    Type:string
     Get: (string list)
     Set: (string list)
 }
@@ -105,11 +106,11 @@ type FsharpSyntax =
 type FileContentsDumper() = 
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
 
-    let rec parseExpressSyntax (node:ExpressionSyntax) = 
+    let rec parseExpressionSyntax (node:ExpressionSyntax) = 
         //node.ChildNodes() |> Seq.iter (fun x -> 
-        //    x |> printfn "%A"
-        //    x.GetType() |> printfn "%A"
-        //    x.Kind() |> printfn "%A")
+            //x |> printfn "%A"
+            //x.GetType() |> printfn "%A"
+            //x.Kind() |> printfn "%A")
 
         //node.ChildNodes() |> Seq.map (fun x -> 
             //match x with 
@@ -123,7 +124,7 @@ type FileContentsDumper() =
             let result = x.WithoutTrivia().ToFullString()
 
             match x.Kind() with  
-            | SyntaxKind.SimpleAssignmentExpression ->  result.Replace("=", "<-")
+            | SyntaxKind.SimpleAssignmentExpression -> result.Replace("=", "<-")
             | SyntaxKind.AddAssignmentExpression -> 
 
                 let isPlusEquals = 
@@ -143,7 +144,7 @@ type FileContentsDumper() =
                             |> Seq.filter (fun x -> x.Kind() <> SyntaxKind.ParameterList) 
                             |> Seq.map (fun x -> 
                                 match x with 
-                                | :? AssignmentExpressionSyntax as x -> parseExpressSyntax x
+                                | :? AssignmentExpressionSyntax as x -> parseExpressionSyntax x
                                 | _ -> x.WithoutTrivia().ToFullString()) 
 
                                 |> String.concat ";"
@@ -153,7 +154,7 @@ type FileContentsDumper() =
                         x.Right.ChildNodes() 
                         |> Seq.map (fun x -> 
                             match x with 
-                            | :? AssignmentExpressionSyntax as x -> parseExpressSyntax x
+                            | :? AssignmentExpressionSyntax as x -> parseExpressionSyntax x
                             | _ -> x.WithoutTrivia().ToFullString()) 
 
                             |> String.concat ";"
@@ -161,41 +162,79 @@ type FileContentsDumper() =
                 let left = 
                     x.Left.ChildNodes() |> Seq.map (fun x -> 
                         match x with 
-                        | :? AssignmentExpressionSyntax as x -> parseExpressSyntax x
+                        | :? AssignmentExpressionSyntax as x -> parseExpressionSyntax x
                         | _ -> x.WithoutTrivia().ToFullString()) |> String.concat "."
 
                 if isPlusEquals then 
                     sprintf "%s.Add (fun %s )" left right
                 else sprintf "%s <- %s" left right
-
-                //result.Replace(" +=", ".Add (fun")
             | _ -> result
         | _ -> node.WithoutTrivia().ToFullString()
 
     let parseExpressionStatement (node:ExpressionStatementSyntax) = 
-        
-        //printfn "%A" <| node.Expression.Kind()
-        //printfn "%A" <| node.Expression.GetType()
-        parseExpressSyntax node.Expression
+        parseExpressionSyntax node.Expression
 
+    let parseArrowExpressionClause (node:ArrowExpressionClauseSyntax) = 
+        node.Expression |> parseExpressionSyntax
 
+    let parseStatementSyntax (node:StatementSyntax) = 
+        node.ToFullString()
+
+    let parseBlockSyntax (node:BlockSyntax) = 
+        node.Statements |> Seq.map parseStatementSyntax
 
     let parseLocalDeclarationStatement (node:LocalDeclarationStatementSyntax) = 
-        //match node.Declaration with 
-        //| :? VariableDeclaratorSyntax as x -> parseVaribleDeclaration x
-        //| x -> printfn "%A" <| x.GetType(); x.ToFullString()
         sprintf "let %s" <| node.Declaration.Variables.ToFullString()
 
+    let rec parseBinaryExpresson (node:BinaryExpressionSyntax) = 
 
-    let parseStatements (node:StatementSyntax) = 
+        let createLogicalExpression join = 
+
+            let left = 
+                match node.Left with 
+                | :? BinaryExpressionSyntax as x -> parseBinaryExpresson x 
+                | _ -> parseExpressionSyntax node.Left
+
+            let right = 
+                match node.Left with 
+                | :? BinaryExpressionSyntax as x -> parseBinaryExpresson x 
+                | _ -> parseExpressionSyntax node.Right
+
+            left + join + right
+
+        match node.Kind() with 
+        | SyntaxKind.LogicalAndExpression -> createLogicalExpression " && "
+        | SyntaxKind.LogicalOrExpression -> createLogicalExpression " || "
+        | SyntaxKind.NotEqualsExpression -> createLogicalExpression " <> "
+        | _ -> printfn "Binary: %A" <| node.Kind();  node.ToFullString()
+        
+
+    let rec parseStatements (node:StatementSyntax) = 
         if node.Kind() = SyntaxKind.ReturnStatement then 
             node.ChildTokens() |> printfn "%A"
             node.ToFullString().Replace("return ", "")
         else 
             match node with 
-            | :? LocalDeclarationStatementSyntax as x -> parseLocalDeclarationStatement x
-            | :? ExpressionStatementSyntax as x -> parseExpressionStatement x
-            | x -> printfn "%A" <| x.GetType(); x.ToFullString()
+            | :? LocalDeclarationStatementSyntax as x -> x.GetLeadingTrivia().ToFullString() + parseLocalDeclarationStatement x
+            | :? ExpressionStatementSyntax as x -> x.GetLeadingTrivia().ToFullString() + parseExpressionStatement x
+            | :? IfStatementSyntax as x -> 
+                
+                let parseSyntaxNodes (node:SyntaxNode) = 
+                    match node with 
+                    | :? BlockSyntax as x -> 
+                        x.Statements 
+                        |> Seq.map (fun x -> x.GetLeadingTrivia().ToFullString() + parseStatements x) 
+                        |> String.concat "\n"
+
+                    | :? BinaryExpressionSyntax as x -> "if " + parseBinaryExpresson x + " then"
+                    | :? ExpressionStatementSyntax as x -> x.GetLeadingTrivia().ToFullString() + parseExpressionStatement x
+                    | _ -> printfn "Statement: %A" <| node.GetType();  node.ToFullString()
+            
+                node.ChildNodes()
+                |> Seq.map parseSyntaxNodes
+                |> String.concat "\n"
+
+            | x ->  printfn "%A" <| x.GetType(); x.ToFullString()
 
 
     member this.VisitNamespaceDeclaration (node:NamespaceDeclarationSyntax ) = 
@@ -346,7 +385,6 @@ type FileContentsDumper() =
             Method.Body = 
                 node.Body.Statements 
                 |> Seq.map parseStatements
-                //|> Seq.map (fun x -> x.WithoutTrailingTrivia().WithoutLeadingTrivia().ToFullString().Replace(";", ""))
                 |> Seq.toList
         }
 
@@ -366,37 +404,33 @@ type FileContentsDumper() =
 
     member this.VisitPropertyDeclaration (node:PropertyDeclarationSyntax) = 
 
-
         let parseAccessorDeclaration (node:AccessorDeclarationSyntax) = 
-            node.Body 
-            |> Option.ofObj 
-            |> Option.map (fun x -> x.Statements |> Seq.map parseStatements |> Seq.toList)
-            |> Option.toList
-            |> List.concat 
 
-        let getStatements = 
+            let expression = node.ExpressionBody |> Option.ofObj
+            let statement = node.Body |> Option.ofObj 
+
+            match expression, statement with 
+            | None, None -> []
+            | Some e, None -> [parseArrowExpressionClause e]
+            | None, Some s -> s.Statements |> Seq.map parseStatements |> Seq.toList
+            | Some e, Some s -> [parseArrowExpressionClause e;] @ (s.Statements |> Seq.map parseStatements |> Seq.toList)
+
+        let processAccessorForAccessorType accessor = 
             node.AccessorList.Accessors 
-            |> Seq.filter (fun x -> x.Kind() = SyntaxKind.GetAccessorDeclaration)
+            |> Seq.filter (fun x -> x.Kind() = accessor)
             |> Seq.map parseAccessorDeclaration
             |> Seq.toList
             |> List.concat
 
-        printfn "Setters"
-        let setStatements = 
-            node.AccessorList.Accessors 
-            |> Seq.filter (fun x -> x.Kind() = SyntaxKind.SetAccessorDeclaration)
-            |> Seq.map parseAccessorDeclaration
-            |> Seq.toList
-            |> List.concat
+        let getStatements = processAccessorForAccessorType SyntaxKind.GetAccessorDeclaration
+        let setStatements =  processAccessorForAccessorType SyntaxKind.SetAccessorDeclaration
 
         {
             Prop.Name = node.Identifier.WithoutTrivia().Text
+            Type = node.Type.WithoutTrivia().ToFullString()
             Prop.Get = getStatements
             Prop.Set = setStatements
         }
-
-    //member this.VisitAttribute (node:AttributeSyntax) = 
-
 
     member this.VisitUsingDirective (node:UsingDirectiveSyntax ) = 
         node.ChildNodes() |> ignore
@@ -415,7 +449,6 @@ type FileContentsDumper() =
             | :? ClassDeclarationSyntax as x -> x |> this.VisitClassDeclaration |> Class
             | :? FieldDeclarationSyntax as x -> x |> this.VisitFieldDeclaration |> Field
             | :? PropertyDeclarationSyntax as x -> x |> this.VisitPropertyDeclaration |> Prop
-            //| :? AttributeSyntax as x -> x |> this.VisitAtt |> Prop
             | x -> printfn "Skipping element: %A" <| x.Kind(); Empty
 
         match tree with 
@@ -479,7 +512,7 @@ module ProgramPrinter =
         match p.Get, p.Set with 
         | [], [] -> 
             seq {
-                yield indent + "member val " + p.Name + " = null with get, set // TODO :: assuming both getter and setter"
+                yield indent + "member val " + p.Name + ":" + p.Type + " = null with get, set // TODO :: assuming both getter and setter"
                 yield "" }
         | _, _  -> 
             let getter = 
@@ -494,7 +527,7 @@ module ProgramPrinter =
                     }
 
             let setter = 
-                let prefix = indent + indent + "and set(vale) = "
+                let prefix = indent + indent + "and set(value) = "
                 match p.Set with 
                 | [] -> Seq.empty
                 | x::[] -> prefix  + x |> Seq.singleton
@@ -556,10 +589,13 @@ module ProgramPrinter =
 
         let subclass = 
             x.BaseClass 
-            |> Option.bind (fun baseClass -> 
-                ctor |> Option.map (fun ctor ->
-                    let args = ctor.SubclassArgs |> String.concat","
-                    indent + "inherit " + baseClass + "(" + args + ")" ))
+            |> Option.map (fun baseClass -> 
+                let args = 
+                    ctor 
+                    |> Option.map (fun ctor -> ctor.SubclassArgs |> String.concat"," )
+                    |> Option.map (fun args -> "(" + args + ")")
+                    |> Option.defaultValue "()"
+                indent + "inherit " + baseClass + args )
             |> function
             | None -> seq {yield ""}
             | Some baseClass -> seq { yield baseClass; yield "" }
@@ -672,6 +708,8 @@ let main argv =
                     } }
 
                 public Baz Bar { get; set; }
+
+                p
             }
         } """
 
