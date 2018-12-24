@@ -1,682 +1,13 @@
 ﻿// Learn more about F# at http://fsharp.org
-
 open System
-open System.Text
-open Microsoft.CodeAnalysis;
-open System.Collections.Generic
-open System.Linq
-open Microsoft.CodeAnalysis
 open Microsoft.CodeAnalysis.CSharp
-open Microsoft.CodeAnalysis.CSharp.Syntax
-open Microsoft.CodeAnalysis.Text
-open System.Linq
-
-type Parameter = {
-    Type:string
-    Name:string
-}
-
-type Ctor = {
-    Body:string list
-    Parameters: Parameter list
-    SubclassArgs: string list
-}
-
-type Method = {
-    Name:string
-    Parameters:Parameter list
-    Body: string list
-    ReturnType:string
-    IsVirtual:bool
-    IsAsync:bool
-    IsPrivate: bool
-    IsOverride:bool
-}
-
-type Prop = {
-    Name:string
-    Type:string
-    Get: (string list)
-    Set: (string list)
-}
-
-type ClassName = {
-    Name:string
-    Generics:string list
-}
-
-type Field = {
-    IsPublic: bool // this syntax is not supported in F# 
-    Name:string
-    Type: string
-    Initilizer:string option
-}
-
-type Attribute = {
-    Name:string
-    Parameters:string option
-}
-
-type Class = {
-    Name:ClassName
-    Constructors:Ctor list
-    Fields: Field list
-    Methods: Method list
-    Properties: Prop list
-    Attributes: Attribute list
-    BaseClass: string option
-    ImplementInterfaces: string list
-    TypeParameters:string list
-}
-
-type Interface = {
-    Name:string
-    // TDOO Generics
-    Methods:string list
-}
-
-type UsingStatement = {
-    Namespace:string
-}
-
-type Namespace = {
-    Name:string
-    Interfaces: Interface list
-    Classes: Class list
-}
-
-
-
-type File = {
-    UsingStatements:UsingStatement list
-    Namespaces:Namespace list
-}
-
-type FsharpSyntax = 
-    | File of File
-    | UsingStatement of UsingStatement
-    | Namespace of Namespace
-    | Interface of Interface
-    | Class of Class
-    | Field of Field seq
-    | Prop of Prop
-    | Method of Method
-    | Empty
-
-type FileContentsDumper() = 
-    inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
-
-    let rec parseExpressionSyntax (node:ExpressionSyntax) = 
-        //node.ChildNodes() |> Seq.iter (fun x -> 
-            //x |> printfn "%A"
-            //x.GetType() |> printfn "%A"
-            //x.Kind() |> printfn "%A")
-
-        //node.ChildNodes() |> Seq.map (fun x -> 
-            //match x with 
-            //| :? AssignmentExpressionSyntax 
-
-            //) 
-
-        match node with 
-        | :? InvocationExpressionSyntax as x -> sprintf "%s" <| x.WithoutTrivia().ToFullString() 
-        | :? AssignmentExpressionSyntax as x -> 
-            let result = x.WithoutTrivia().ToFullString()
-
-            match x.Kind() with  
-            | SyntaxKind.SimpleAssignmentExpression -> result.Replace("=", "<-")
-            | SyntaxKind.AddAssignmentExpression -> 
-
-                let isPlusEquals = 
-                    x.ChildTokens() |> Seq.exists (fun x -> x.Kind() = SyntaxKind.PlusEqualsToken)
-
-                let right =
-                    if isPlusEquals then 
-                        let paramList = 
-                            x.Right.ChildNodes() 
-                            |> Seq.filter (fun x -> x.Kind() = SyntaxKind.ParameterList) 
-                            |> Seq.map (fun x -> x.ChildNodes() |> Seq.last)
-                            |> Seq.map (fun x -> x.WithoutTrivia().ToFullString())
-                            |> String.concat ""
-
-                        let otherNodes = 
-                            x.Right.ChildNodes() 
-                            |> Seq.filter (fun x -> x.Kind() <> SyntaxKind.ParameterList) 
-                            |> Seq.map (fun x -> 
-                                match x with 
-                                | :? AssignmentExpressionSyntax as x -> parseExpressionSyntax x
-                                | _ -> x.WithoutTrivia().ToFullString()) 
-
-                                |> String.concat ";"
-
-                        sprintf "%s -> %s" paramList otherNodes
-                    else 
-                        x.Right.ChildNodes() 
-                        |> Seq.map (fun x -> 
-                            match x with 
-                            | :? AssignmentExpressionSyntax as x -> parseExpressionSyntax x
-                            | _ -> x.WithoutTrivia().ToFullString()) 
-
-                            |> String.concat ";"
-
-                let left = 
-                    x.Left.ChildNodes() |> Seq.map (fun x -> 
-                        match x with 
-                        | :? AssignmentExpressionSyntax as x -> parseExpressionSyntax x
-                        | _ -> x.WithoutTrivia().ToFullString()) |> String.concat "."
-
-                if isPlusEquals then 
-                    sprintf "%s.Add (fun %s )" left right
-                else sprintf "%s <- %s" left right
-            | _ -> result
-        | _ -> node.WithoutTrivia().ToFullString()
-
-    let parseExpressionStatement (node:ExpressionStatementSyntax) = 
-        parseExpressionSyntax node.Expression
-
-    let parseArrowExpressionClause (node:ArrowExpressionClauseSyntax) = 
-        node.Expression |> parseExpressionSyntax
-
-    let parseStatementSyntax (node:StatementSyntax) = 
-        node.ToFullString()
-
-    let parseBlockSyntax (node:BlockSyntax) = 
-        node.Statements |> Seq.map parseStatementSyntax
-
-    let parseLocalDeclarationStatement (node:LocalDeclarationStatementSyntax) = 
-        sprintf "let %s" <| node.Declaration.Variables.ToFullString()
-
-    let rec parseBinaryExpresson (node:BinaryExpressionSyntax) = 
-
-        let createLogicalExpression join = 
-
-            let left = 
-                match node.Left with 
-                | :? BinaryExpressionSyntax as x -> parseBinaryExpresson x 
-                | _ -> parseExpressionSyntax node.Left
-
-            let right = 
-                match node.Left with 
-                | :? BinaryExpressionSyntax as x -> parseBinaryExpresson x 
-                | _ -> parseExpressionSyntax node.Right
-
-            left + join + right
-
-        match node.Kind() with 
-        | SyntaxKind.LogicalAndExpression -> createLogicalExpression " && "
-        | SyntaxKind.LogicalOrExpression -> createLogicalExpression " || "
-        | SyntaxKind.NotEqualsExpression -> createLogicalExpression " <> "
-        | _ -> printfn "Binary: %A" <| node.Kind();  node.ToFullString()
-        
-
-    let rec parseStatements (node:StatementSyntax) = 
-        if node.Kind() = SyntaxKind.ReturnStatement then 
-            node.ChildTokens() |> printfn "%A"
-            node.ToFullString().Replace("return ", "")
-        else 
-            match node with 
-            | :? LocalDeclarationStatementSyntax as x -> x.GetLeadingTrivia().ToFullString() + parseLocalDeclarationStatement x
-            | :? ExpressionStatementSyntax as x -> x.GetLeadingTrivia().ToFullString() + parseExpressionStatement x
-            | :? IfStatementSyntax as x -> 
-                
-                let parseSyntaxNodes (node:SyntaxNode) = 
-                    match node with 
-                    | :? BlockSyntax as x -> 
-                        x.Statements 
-                        |> Seq.map (fun x -> x.GetLeadingTrivia().ToFullString() + parseStatements x) 
-                        |> String.concat "\n"
-
-                    | :? BinaryExpressionSyntax as x -> "if " + parseBinaryExpresson x + " then"
-                    | :? ExpressionStatementSyntax as x -> x.GetLeadingTrivia().ToFullString() + parseExpressionStatement x
-                    | _ -> printfn "Statement: %A" <| node.GetType();  node.ToFullString()
-            
-                node.ChildNodes()
-                |> Seq.map parseSyntaxNodes
-                |> String.concat "\n"
-
-            | x ->  printfn "%A" <| x.GetType(); x.ToFullString()
-
-
-    member this.VisitNamespaceDeclaration (node:NamespaceDeclarationSyntax ) = 
-
-        let classes = 
-            node.ChildNodes().OfType<ClassDeclarationSyntax>()
-            |> Seq.map this.VisitClassDeclaration
-            |> Seq.toList
-
-        let interfaces = 
-            node.ChildNodes().OfType<InterfaceDeclarationSyntax>()
-            |> Seq.map this.VisitInterfaceDeclaration
-            |> Seq.toList
-            
-        {
-            Namespace.Name = node.Name.WithoutTrivia().ToFullString()
-            Namespace.Classes = classes
-            Namespace.Interfaces = interfaces
-        } 
-
-
-    member this.VisitInterfaceDeclaration(node:InterfaceDeclarationSyntax) =    
-
-        let members = 
-            node.Members |> Seq.map (fun x -> x.ToFullString()) |> Seq.toList
-
-        {
-            Interface.Name = node.Identifier.WithoutTrivia().Text
-            Methods = members
-        }
-
-    member this.VisitClassDeclaration(node:ClassDeclarationSyntax ) =
-
-        let attrs = 
-            node.AttributeLists
-            |> Seq.map (fun x -> 
-                x.Attributes |> Seq.map (fun x -> 
-                    let args = 
-                        x.ArgumentList
-                        |> Option.ofObj 
-
-                        |> Option.map (fun x -> x.ToFullString())
-                        //|> Option.map (fun x -> x |> Seq.map (fun x -> 
-                        //    {
-                        //        Parameter.Name = x.NameColon.Name
-                        //        Parameter.Type = x.Expression
-                        //    }
-                        //))
-
-                    {
-                        Attribute.Name = x.Name.WithoutTrivia().ToFullString()
-                        Attribute.Parameters = args }
-                    ))
-            |> Seq.concat
-            |> Seq.toList
-
-        let typeParameters = 
-            node.TypeParameterList 
-            |> Option.ofObj 
-            |> Option.map (fun x -> 
-                x.Parameters 
-                |> Seq.map (fun x -> x.Identifier.WithoutTrivia().Text) 
-                |> Seq.toList )
-            |> Option.toList
-            |> List.concat
-
-        let baseTypes = 
-            node.BaseList 
-            |> Option.ofObj 
-            |> Option.bind (fun x -> 
-                x.Types 
-                |> Seq.map (fun x -> x.WithoutTrivia().ToFullString())
-                |> Seq.toList
-                |> function 
-                | [] -> None
-                | x::xs -> Some (x, xs) )
-
-        let ctors = 
-            node.ChildNodes().OfType<ConstructorDeclarationSyntax>()
-            |> Seq.map this.VisitConstructorDeclaration
-            |> Seq.toList
-
-        let fields = 
-            node.ChildNodes().OfType<FieldDeclarationSyntax>()
-            |> Seq.map this.VisitFieldDeclaration
-            |> Seq.concat
-            |> Seq.toList
-
-        let methods = 
-            node.ChildNodes().OfType<MethodDeclarationSyntax>()
-            |> Seq.map this.VisitMethodDeclaration
-            |> Seq.toList
-
-        let properties = 
-            node.ChildNodes().OfType<PropertyDeclarationSyntax>()
-            |> Seq.map this.VisitPropertyDeclaration
-            |> Seq.toList
-            
-        {
-            Name = { ClassName.Name = node.Identifier.ValueText; Generics = [] }
-            ImplementInterfaces = baseTypes |> Option.map (snd) |> Option.toList |> List.concat
-            BaseClass = baseTypes |> Option.map (fst)
-            Constructors = ctors
-            Fields = fields
-            Methods = methods
-            Properties = properties
-            TypeParameters = typeParameters
-            Attributes = attrs  }
-
-
-    member this.VisitConstructorDeclaration (node:ConstructorDeclarationSyntax) = 
-        {
-            Ctor.Body = 
-                node.Body.Statements 
-                |> Seq.map (fun x -> x.WithoutTrailingTrivia().WithoutLeadingTrivia().ToFullString().Replace(";", ""))
-                |> Seq.toList
-
-            Ctor.Parameters = 
-                node.ParameterList.Parameters 
-                |> Seq.map (fun x -> 
-                    {Parameter.Name = x.Identifier.WithoutTrivia().Text; Type = x.Type.WithoutTrivia().ToFullString() })
-                |> Seq.toList
-
-            SubclassArgs = 
-                node.Initializer |> Option.ofObj 
-                |> Option.bind (fun x -> Option.ofObj x.ArgumentList)
-                |> Option.map (fun x -> x.Arguments)
-                |> Option.map (fun x -> 
-                    x |> Seq.map (fun x -> x.WithoutTrivia().ToFullString()) |> Seq.toList)
-                |> Option.toList
-                |> List.concat
-        }
-
-    member this.VisitMethodDeclaration(node:MethodDeclarationSyntax ) = 
-        {
-            Method.Name = node.Identifier.WithoutTrivia().Text
-            Method.IsVirtual = node.Modifiers |> Seq.exists (fun x -> x.Kind() = SyntaxKind.VirtualKeyword )
-            Method.IsAsync = node.Modifiers |> Seq.exists (fun x -> x.Kind() = SyntaxKind.AsyncKeyword )
-            Method.IsPrivate = node.Modifiers |> Seq.exists (fun x -> x.Kind() = SyntaxKind.PrivateKeyword)
-            Method.IsOverride = node.Modifiers |> Seq.exists (fun x -> x.Kind() = SyntaxKind.OverrideKeyword )
-
-            Method.ReturnType = node.ReturnType.WithoutTrivia().ToFullString()
-            Method.Parameters = 
-                node.ParameterList.Parameters 
-                |> Seq.map (fun x -> 
-                    {Parameter.Name = x.Identifier.WithoutTrivia().Text; Type = x.Type.WithoutTrivia().ToFullString() })
-                |> Seq.toList
-            Method.Body = 
-                node.Body.Statements 
-                |> Seq.map parseStatements
-                |> Seq.toList
-        }
-
-    member this.VisitFieldDeclaration (node:FieldDeclarationSyntax): Field seq = 
-
-        let isPublic = node.Modifiers |> Seq.exists (fun x -> x.Kind() = SyntaxKind.PublicKeyword)
-
-        node.Declaration.Variables
-        |> Seq.map (fun x -> 
-            {
-                Field.Name =  x.Identifier.WithoutTrivia().ToFullString()
-                Field.Type = node.Declaration.Type.WithoutTrivia().ToFullString()
-                Field.IsPublic = isPublic
-                Field.Initilizer = x.Initializer |> Option.ofObj |> Option.map (fun x -> x.Value.WithoutTrivia().ToFullString())
-            })
-
-
-    member this.VisitPropertyDeclaration (node:PropertyDeclarationSyntax) = 
-
-        let parseAccessorDeclaration (node:AccessorDeclarationSyntax) = 
-
-            let expression = node.ExpressionBody |> Option.ofObj
-            let statement = node.Body |> Option.ofObj 
-
-            match expression, statement with 
-            | None, None -> []
-            | Some e, None -> [parseArrowExpressionClause e]
-            | None, Some s -> s.Statements |> Seq.map parseStatements |> Seq.toList
-            | Some e, Some s -> [parseArrowExpressionClause e;] @ (s.Statements |> Seq.map parseStatements |> Seq.toList)
-
-        let processAccessorForAccessorType accessor = 
-            node.AccessorList.Accessors 
-            |> Seq.filter (fun x -> x.Kind() = accessor)
-            |> Seq.map parseAccessorDeclaration
-            |> Seq.toList
-            |> List.concat
-
-        let getStatements = processAccessorForAccessorType SyntaxKind.GetAccessorDeclaration
-        let setStatements =  processAccessorForAccessorType SyntaxKind.SetAccessorDeclaration
-
-        {
-            Prop.Name = node.Identifier.WithoutTrivia().Text
-            Type = node.Type.WithoutTrivia().ToFullString()
-            Prop.Get = getStatements
-            Prop.Set = setStatements
-        }
-
-    member this.VisitUsingDirective (node:UsingDirectiveSyntax ) = 
-        node.ChildNodes() |> ignore
-
-        { Namespace = node.Name.WithoutTrivia().ToFullString() }
-
-
-    member this.ParseSyntax tree (x: SyntaxNode) = 
-
-        let result = 
-            match x with
-            | :? UsingDirectiveSyntax as x -> x |> this.VisitUsingDirective |> UsingStatement
-            | :? NamespaceDeclarationSyntax as x -> x |> this.VisitNamespaceDeclaration |> Namespace
-            | :? MethodDeclarationSyntax as x -> x |> this.VisitMethodDeclaration |> Method
-            | :? InterfaceDeclarationSyntax as x -> x |> this.VisitInterfaceDeclaration |> Interface
-            | :? ClassDeclarationSyntax as x -> x |> this.VisitClassDeclaration |> Class
-            | :? FieldDeclarationSyntax as x -> x |> this.VisitFieldDeclaration |> Field
-            | :? PropertyDeclarationSyntax as x -> x |> this.VisitPropertyDeclaration |> Prop
-            | x -> printfn "Skipping element: %A" <| x.Kind(); Empty
-
-        match tree with 
-        | None -> result |> Some
-        | Some tree -> 
-            match tree, result with 
-            | Empty, x -> x |> Some
-            | File f, File _ -> failwith "Meging files, not implemented"
-            | File f, Interface i -> failwith "Meging interface with file, not implemented"
-            | File f, Class c -> failwith "Meging class with file, not implemented"
-            | File f, Field field -> failwith "Meging files, not implemented"
-            | File f, Prop p -> failwith "Meging files, not implemented"
-            | File f, Method m -> failwith "Meging files, not implemented"
-            | File f, Namespace ns -> {f with Namespaces = ns :: f.Namespaces} |> File |> Some
-            | File f, UsingStatement m -> { f with UsingStatements = m :: f.UsingStatements } |> File |> Some
-            | UsingStatement i, UsingStatement i2 -> 
-                {
-                    UsingStatements = [i;i2]
-                    Namespaces = []
-                } |> File |> Some
-            | UsingStatement i, Namespace ns -> 
-                {
-                    UsingStatements = [i]
-                    Namespaces = [ns]
-                } |> File |> Some
-            | _, _ -> sprintf "C# not supported: %A, %A" tree result |> failwith
-
-
-module ProgramPrinter = 
-
-    let private addIndents ind xs = xs |> List.map (fun x -> ind + x)
-    let private addIndentsLvl2 ind xs = xs |> List.map (fun x -> ind + ind + x)
-    let private addIndentsLvl3 ind xs = xs |> List.map (fun x -> ind + ind + ind + x)
-
-    let printParameters (xs: Parameter list) = 
-        match xs with 
-        | [] -> "()"
-        | xs -> 
-            let args = xs |> List.map (fun x -> x.Name + ":" + x.Type) |> String.concat ","
-            "(" + args + ")"
-
-
-    let printMethod indent (m:Method) = 
-
-        let args = m.Parameters |> printParameters
-        
-        let prefix = 
-            match m.IsOverride, m.IsPrivate with 
-            | true, _ -> "override this."
-            | false, true -> "member private this."
-            | false, false -> "member this."
-            
-        seq {
-            yield indent + prefix + m.Name + args + " = "
-            yield! (m.Body |> addIndentsLvl2 indent)
-            yield ""
-        }
-
-    let printProp indent (p:Prop) = 
-
-        match p.Get, p.Set with 
-        | [], [] -> 
-            seq {
-                yield indent + "member val " + p.Name + ":" + p.Type + " = null with get, set // TODO :: assuming both getter and setter"
-                yield "" }
-        | _, _  -> 
-            let getter = 
-                let prefix = indent + indent + "with get() = "
-                match p.Get with 
-                | [] -> Seq.empty
-                | x::[] -> prefix + x |> Seq.singleton
-                | xs -> 
-                    seq {
-                        yield prefix
-                        yield! xs |> addIndentsLvl3 indent
-                    }
-
-            let setter = 
-                let prefix = indent + indent + "and set(value) = "
-                match p.Set with 
-                | [] -> Seq.empty
-                | x::[] -> prefix  + x |> Seq.singleton
-                | xs -> 
-                    seq {
-                        yield prefix 
-                        yield! xs |> addIndentsLvl3 indent
-                }
-
-            seq {
-                yield indent + "member this." + p.Name 
-                yield! getter 
-                yield! setter
-                yield ""
-            }
-
-    let printField indent f = 
-        let line = 
-            match f.Initilizer with 
-            | Some init -> indent + "let " + f.Name + " = " + init
-            | None -> indent + "let " + f.Name + ":" + f.Type + " = null // TODO:: replace with default value for type"
-
-        seq {
-            if f.IsPublic then yield "// TODO:: C# declared this as public. F# does not support a public field"
-            yield line } 
-
-    let printAttribute (x:Attribute) = 
-        let prefix = "[<" + x.Name
-        let suffix =  ">]"
-        match x.Parameters with 
-        | Some ps -> prefix + ps + suffix
-        | None -> prefix  + suffix
-        
-    let printClass indent (x:Class) = 
-        if List.length x.Constructors > 1 then 
-            printfn "Mulitple ctors for %s, this is not implemented" x.Name.Name
-
-        let ctor = 
-            match x.Constructors with 
-            | [] -> None
-            | xs -> xs |> List.maxBy (fun x -> x.Parameters |> List.length) |> Some
-
-        let ctorArgs = ctor |> Option.map (fun x -> x.Parameters |> printParameters) |> Option.defaultValue "()"
-        let methods = x.Methods |> List.map (printMethod indent) |> Seq.concat
-        let props = x.Properties |> Seq.map (printProp indent) |> Seq.concat
-
-        let attributes = x.Attributes |> Seq.map (printAttribute)
-
-        let typeParameters = 
-            match x.TypeParameters with 
-            | [] -> ""
-            | xs -> 
-                let fTypePaarams = 
-                    xs
-                    |> List.map (fun x -> "'" + x)
-                    |> String.concat ","
-
-                "<" + fTypePaarams + ">"
-
-        let subclass = 
-            x.BaseClass 
-            |> Option.map (fun baseClass -> 
-                let args = 
-                    ctor 
-                    |> Option.map (fun ctor -> ctor.SubclassArgs |> String.concat"," )
-                    |> Option.map (fun args -> "(" + args + ")")
-                    |> Option.defaultValue "()"
-                indent + "inherit " + baseClass + args )
-            |> function
-            | None -> seq {yield ""}
-            | Some baseClass -> seq { yield baseClass; yield "" }
-
-        let interfaces = 
-            match x.ImplementInterfaces with 
-            | [] -> Seq.empty
-            | xs -> 
-                xs |> Seq.map (fun i -> 
-                    seq {
-                        yield (indent + "interface " + i + " with")
-                        yield ""
-                    }) 
-                |> Seq.concat
-
-        let ctorBodies = 
-            x.Constructors 
-            |> List.map (fun ctor -> 
-
-                if List.length ctor.Body >= 1 then 
-                    seq {
-                        yield indent +  "do"
-                        yield! ctor.Body |> addIndentsLvl2 indent
-                        yield "" }
-                else Seq.empty)
-            |> Seq.concat
-
-        let fields = 
-            x.Fields 
-            |> List.map (printField indent)
-            |> Seq.concat
-            
-
-        seq {
-            yield! attributes
-            yield ("type " + x.Name.Name + typeParameters + ctorArgs + " = ")
-            yield! subclass
-            yield! fields
-            yield! ctorBodies
-            yield! methods
-            yield! props
-            yield! interfaces
-        }
-
-
-    let printInterface indent (i:Interface) = 
-
-        seq {
-            yield "type " + i.Name + " ="
-            yield! i.Methods
-        }
-
-    let printUsingStatement us = 
-        "open " + us.Namespace
-
-    let printNamespace indent usingStatements ns = 
-        seq {
-            yield "namespace " + ns.Name
-            yield! usingStatements |> Seq.map (printUsingStatement)
-            yield ""
-            yield! ns.Interfaces |> Seq.map (printInterface indent) |> Seq.concat
-            yield! ns.Classes |> Seq.map (printClass indent) |> Seq.concat
-        }
-
-
-    let printFile indent file = 
-        seq {
-            yield! file.Namespaces |> Seq.map (printNamespace indent file.UsingStatements) |> Seq.concat
-            yield ""
-        }
-
-    let prettyPrint indent = function 
-    | File f -> printFile indent f
-    | Namespace ns -> printNamespace indent Seq.empty ns
-    | UsingStatement us -> printUsingStatement us |> Seq.singleton
-    | Interface i -> printInterface indent i
-    | Class c -> printClass indent c
-    | Field f -> f |> Seq.map (printField indent) |> Seq.concat
-    | Prop p -> printProp indent p
-    | Method m -> printMethod indent m
-    | Empty -> Seq.empty
+open CsToFs
+open Microsoft.FSharp.Compiler.Ast
+open Microsoft.FSharp.Compiler.Range
+open Microsoft.FSharp.Compiler.SourceCodeServices.Structure
+open Microsoft.FSharp.Compiler.SourceCodeServices 
+open Fantomas
+open Fantomas.FormatConfig
     
 [<EntryPoint>]
 let main argv =
@@ -728,26 +59,412 @@ let main argv =
         } """
 
 
-    let visitor = new FileContentsDumper()
+    let mvvmCross = """
+        using System;
+        using System.Collections.Specialized;
+        using System.Windows.Input;
+        using Android.App;
+        using Android.Views;
+        using Android.Widget;
+        using MvvmCross.Binding.BindingContext;
+        using MvvmCross.Navigation;
+        using MvvmCross.ViewModels;
+
+        namespace StarWarsSample.Forms.Droid
+        {
+            // This class is never actually executed, but when Xamarin linking is enabled it does how to ensure types and properties
+            // are preserved in the deployed app
+            [Android.Runtime.Preserve(AllMembers = true)]
+            public class LinkerPleaseInclude
+            {
+                public void Include(Button button)
+                {
+                    button.Click += (s, e) => button.Text = button.Text + "";
+                }
+
+                public void Include(CheckBox checkBox)
+                {
+                    checkBox.CheckedChange += (sender, args) => checkBox.Checked = !checkBox.Checked;
+                }
+
+                public void Include(Switch @switch)
+                {
+                    @switch.CheckedChange += (sender, args) => @switch.Checked = !@switch.Checked;
+                }
+
+                public void Include(View view)
+                {
+                    view.Click += (s, e) => view.ContentDescription = view.ContentDescription + "";
+                }
+
+                public void Include(TextView text)
+                {
+                    text.AfterTextChanged += (sender, args) => text.Text = "" + text.Text;
+                    text.Hint = "" + text.Hint;
+                }
+
+                public void Include(CheckedTextView text)
+                {
+                    text.AfterTextChanged += (sender, args) => text.Text = "" + text.Text;
+                    text.Hint = "" + text.Hint;
+                }
+
+                public void Include(CompoundButton cb)
+                {
+                    cb.CheckedChange += (sender, args) => cb.Checked = !cb.Checked;
+                }
+
+                public void Include(SeekBar sb)
+                {
+                    sb.ProgressChanged += (sender, args) => sb.Progress = sb.Progress + 1;
+                }
+
+                public void Include(RadioGroup radioGroup)
+                {
+                    radioGroup.CheckedChange += (sender, args) => radioGroup.Check(args.CheckedId);
+                }
+
+                public void Include(RadioButton radioButton)
+                {
+                    radioButton.CheckedChange += (sender, args) => radioButton.Checked = args.IsChecked;
+                }
+
+                public void Include(RatingBar ratingBar)
+                {
+                    ratingBar.RatingBarChange += (sender, args) => ratingBar.Rating = 0 + ratingBar.Rating;
+                }
+
+                public void Include(Activity act)
+                {
+                    act.Title = act.Title + "";
+                }
+
+                public void Include(INotifyCollectionChanged changed)
+                {
+                    changed.CollectionChanged += (s, e) => { var test = $"{e.Action}{e.NewItems}{e.NewStartingIndex}{e.OldItems}{e.OldStartingIndex}"; };
+                }
+
+                public void Include(ICommand command)
+                {
+                    command.CanExecuteChanged += (s, e) => { if (command.CanExecute(null)) command.Execute(null); };
+                }
+
+                public void Include(MvvmCross.IoC.MvxPropertyInjector injector)
+                {
+                    injector = new MvvmCross.IoC.MvxPropertyInjector();
+                }
+
+                public void Include(System.ComponentModel.INotifyPropertyChanged changed)
+                {
+                    changed.PropertyChanged += (sender, e) =>
+                    {
+                        var test = e.PropertyName;
+                    };
+                }
+
+                public void Include(MvxTaskBasedBindingContext context)
+                {
+                    context.Dispose();
+                    var context2 = new MvxTaskBasedBindingContext();
+                    context2.Dispose();
+                }
+
+                public void Include(MvxNavigationService service, IMvxViewModelLoader loader)
+                {
+                    service = new MvxNavigationService(null, loader);
+                }
+
+                public void Include(ConsoleColor color)
+                {
+                    Console.Write("");
+                    Console.WriteLine("");
+                    color = Console.ForegroundColor;
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.ForegroundColor = ConsoleColor.Magenta;
+                    Console.ForegroundColor = ConsoleColor.White;
+                    Console.ForegroundColor = ConsoleColor.Gray;
+                    Console.ForegroundColor = ConsoleColor.DarkGray;
+                }
+
+                public void Include(MvvmCross.Plugin.Json.Plugin plugin)
+                {
+                    plugin.Load();
+                }
+            }
+        }"""
+
+    let mvvmCross = 
+        """
+        [CommandHandler (RefactoryCommands.QuickFix)]
+        void OnQuickFixCommand ()
+        {
+            if (!AnalysisOptions.EnableFancyFeatures || smartTagMarginMarker == null) {
+                //Fixes = RefactoringService.GetValidActions (Editor, DocumentContext, Editor.CaretLocation).Result;
+
+                PopupQuickFixMenu (null, null);
+                return;
+            }
+
+            CancelSmartTagPopupTimeout ();
+            PopupQuickFixMenu (null, menu => { });
+        }
+        """
+
+    let mvvmCross = 
+        """
+            public void RemoveWidget ()
+            {
+                if (smartTagMarginMarker != null) {
+                    Editor.RemoveMarker (smartTagMarginMarker);
+                    smartTagMarginMarker.ShowPopup -= SmartTagMarginMarker_ShowPopup;
+                    smartTagMarginMarker = null;
+                }
+                CancelSmartTagPopupTimeout ();
+            }
+        """
+
+    //let visitor = new FileContentsDumper()
     let indent = " " |> List.replicate 4 |> String.concat ""
     
     let tree = 
-        System.Console.In.ReadToEnd()
-        //mvvmCross
+        //System.Console.In.ReadToEnd()
+        mvvmCross
         |> SyntaxFactory.ParseSyntaxTree
 
-    let t = tree.GetRoot()
-    t.ChildNodes()
-    |> Seq.fold (fun file node -> visitor.ParseSyntax file node) None
-    |> Option.map (ProgramPrinter.prettyPrint indent >> String.concat "\n")
-    |> Option.defaultValue "failed to parse"
-    |> Console.WriteLine
+
+    let checker = FSharpChecker.Create()
+
+    let getUntypedTree (file, input) = 
+        // Get compiler options for the 'project' implied by a single script file
+        let projectOptions, _errors =  
+            checker.GetProjectOptionsFromScript(file, input)
+            |> Async.RunSynchronously
+
+        let parsingOptions, _errors = checker.GetParsingOptionsFromProjectOptions(projectOptions)
+
+        // Run the first phase (untyped parsing) of the compiler
+        let parseFileResults = 
+            checker.ParseFile(file, input, parsingOptions) 
+            |> Async.RunSynchronously
+
+        match parseFileResults.ParseTree with
+        | Some tree -> tree
+        | None -> failwith "Something went wrong during parsing!"
+
+
+    let toIdent (s:string) = 
+        s.Split('.') 
+        |> Array.toList
+        |> List.map (fun x -> Ident(x, range0))
+
+    let createOpenStatements (name: UsingStatement) = 
+        (LongIdentWithDots (name.Namespace |> toIdent, [range0]), range0) |> SynModuleDecl.Open 
+        
+    let toNamespace (ns:Namespace) mods = 
+        SynModuleOrNamespace (toIdent ns.Name,false,false, mods, PreXmlDocEmpty, [], None, range0)
+
+    let defaultModule mods = 
+        [SynModuleOrNamespace (toIdent "Program",false,true, mods, PreXmlDocEmpty, [], None, range0)]
+
+    let file = "unknown.fs"
+    let toFile moduleOrNs = 
+
+        ParsedImplFileInput (file, true, QualifiedNameOfFile (Ident()), [], [], moduleOrNs, (true, true)) 
+        |> ParsedInput.ImplFile
+
+    let toMethod (x:Method) = 
+        let methodName = LongIdentWithDots (toIdent ("this." + x.Name), [range0])
+
+        let lines = SynExpr.Const (SynConst.Unit, range0) // TODO 
+
+            //x.Body |> List.singleton
+            ////|> List.map (fun (Line l) -> toIdent l)
+            //|> function 
+            //| [] -> 
+            //| x::[] -> 
+            //    SynExpr.LongIdent (false, LongIdentWithDots (x, [range0]), None, range0)
+            //| xs -> 
+                //xs 
+                //|> List.map (fun x -> SynExpr.LongIdent (false, LongIdentWithDots (x, [range0]), None, range0))
+                //|> List.reduce (fun a b ->  SynExpr.Sequential (SequencePointsAtSeq, true, a,b,range0)) 
+                //|> (fun x -> 
+                    //let a = 
+                    //    SynExpr.App (ExprAtomicFlag.NonAtomic,false, SynExpr.Ident (Ident("CancelSmartTagPopupTimeout", range0)), SynExpr.Const(SynConst.Unit, range0), range0)
+                    //SynExpr.Sequential (SequencePointsAtSeq, true, x,a,range0)  )
+
+        SynMemberDefn.Member 
+            (SynBinding.Binding (
+                x.Accessibility, 
+                SynBindingKind.NormalBinding,
+                false, //mustInline:bool *
+                false, //isMutable:bool *
+                [], //attrs:SynAttributes *
+                PreXmlDoc.PreXmlDocEmpty, //xmlDoc:PreXmlDoc *
+                SynValData (
+                    Some {
+                        MemberFlags.IsInstance = true
+                        MemberFlags.IsDispatchSlot = false 
+                        MemberFlags.IsOverrideOrExplicitImpl = false 
+                        MemberFlags.IsFinal = false
+                        MemberFlags.MemberKind = MemberKind.Member
+                    }, SynValInfo ([], SynArgInfo ([], false, Ident (x.Name, range0) |> Some )), None), // valData:SynValData *
+                SynPat.LongIdent
+                    (methodName, None, None, 
+                    Pats ([SynPat.Const (SynConst.Unit, range0 )]), None, range0 ), // headPat:SynPat *
+                None, // (SynType.LongIdent (toIdent "return", range0,[]) ), // returnInfo:SynBindingReturnInfo option *
+                lines,
+                range0, //range:range *
+                NoSequencePointAtInvisibleBinding
+        ), range0)
+
+    let toDefaultClass method = 
+        let x = 
+            ComponentInfo ([], [], [], toIdent "X", PreXmlDocEmpty, false, None, range0)
+
+        let methods = [method]
+        let ctor = SynMemberDefn.ImplicitCtor (None,[],[],None, range0)
+
+        SynTypeDefn.TypeDefn (x, SynTypeDefnRepr.ObjectModel (TyconUnspecified, [ctor] @ methods, range0), [], range0)
+        |> List.singleton
+        |> (fun x -> SynModuleDecl.Types (x, range0))
+
+    let toClass (cn:Class) = 
+        let att = 
+            cn.Attributes |> List.map (fun x -> 
+                let arg = SynExpr.Ident (Ident("",range0))
+
+                {
+                    SynAttribute.TypeName = LongIdentWithDots (toIdent x.Name, [range0])
+                    SynAttribute.ArgExpr = SynExpr.Paren (arg, range0, None, range0)
+                    // SynExpr.Paren(SynExpr.Const SynConst.Char ',', range0, range0) 
+                    SynAttribute.AppliesToGetterAndSetter = false
+                    SynAttribute.Range = range0
+                    SynAttribute.Target = None
+                }
+            )
+        let x = 
+            ComponentInfo (att, [], [], toIdent cn.Name.Name, PreXmlDocEmpty, false, None, range0)
+            
+        let methods = cn.Methods |> List.map toMethod
+        let ctor = SynMemberDefn.ImplicitCtor (None,[],[],None, range0)
+        SynTypeDefn.TypeDefn (x, SynTypeDefnRepr.ObjectModel (TyconUnspecified, [ctor] @ methods, range0), [], range0)
+        |> List.singleton
+        |> (fun x -> SynModuleDecl.Types (x, range0))
+        
+    //let t = tree.GetRoot()
+    //t.ChildNodes()
+    //|> Seq.fold (fun file node -> visitor.ParseSyntax file node) None
+    //|> Option.map (function 
+    //    | CsToFs.File f -> 
+    //        let mods = f.UsingStatements |> List.map createOpenStatements 
+
+    //        let namespaces = 
+    //            f.Namespaces |> List.map (fun x -> 
+    //                let classes = 
+    //                    x.Classes |> List.map toClass
+    //                toNamespace x (mods @ classes) )
+    //        toFile namespaces
+
+    //    | CsToFs.UsingStatement us -> createOpenStatements us  |> List.singleton |> defaultModule |> toFile
+    //    | CsToFs.Namespace ns -> toNamespace ns [] |> List.singleton |> toFile
+
+    //    | CsToFs.Class cn -> 
+    //        cn 
+    //        |> toClass
+    //        |> List.singleton
+    //        |> defaultModule
+    //        |> toFile
+
+    //    | CsToFs.Method m -> 
+    //        m
+    //        |> toMethod
+    //        |> toDefaultClass
+    //        |> List.singleton
+    //        |> defaultModule
+    //        |> toFile
+    //    )
+    //|> Option.iter (fun tree -> 
+    //    printfn "------------------------------------------------------------"
+    //    printfn "%A" tree
+
+    //    printfn "------------------------------------------------------------"
+
+    //    if CodeFormatter.IsValidAST tree then
+    //        CodeFormatter.FormatAST(tree, file, None, FormatConfig.Default) |> printfn "%s"
+    //    else 
+    //        printfn "Bad F# syntax tree"
+    //)
+
+
+
+    //let t = tree.GetRoot()
+    //t.ChildNodes()
+    //|> Seq.fold (fun file node -> visitor.ParseSyntax file node) None
+    //|> Option.map (ProgramPrinter.prettyPrint indent >> String.concat "\n")
+    //|> Option.defaultValue "failed to parse"
+    //|> Console.WriteLine
 
     //visitor.Visit <| tree.GetRoot()
 
     //printfn "--\nParsed C# Code. F# below:\n--"
     //let lines = ProgramPrinter.prettyPrint visitor.GetFsharpProgram
     //lines |> Seq.iter (printfn "%s")
+
+
+
+    //public void RemoveWidget ()
+    //{
+    //    if (smartTagMarginMarker != null) {
+    //        Editor.RemoveMarker (smartTagMarginMarker);
+    //        smartTagMarginMarker.ShowPopup -= SmartTagMarginMarker_ShowPopup;
+    //        smartTagMarginMarker = null;
+    //    }
+    //    CancelSmartTagPopupTimeout ();
+    //}
+
+    let input = """
+        type Foo() = 
+
+            let x = if x = 10 || x >= 20 then 30 else 546
+
+            member this.RemoveWidget() = 
+                if smartTagMargin then 
+                    Editor.RemoveMarker (smartTagMarginMarker);
+                    //        smartTagMarginMarker.ShowPopup -= SmartTagMarginMarker_ShowPopup;
+                    smartTagMarginMarker <- null;
+                CancelSmartTagPopupTimeout ();
+                    """
+    // File name in Unix format
+    let file = "/home/user/Test.fsx"
+
+    // Get the AST of sample F# code
+    let tree = getUntypedTree(file, input)
+
+    printfn "%A" tree
+
+    //let tree = 
+        //ParsedImplFileInput (file, false, QualifiedNameOfFile (Ident()), [], [], [
+            //    SynModuleOrNamespace ([Ident ("FooBar", range0)],false,true, [], PreXmlDocEmpty, [], None, range0)
+            //], (true, true)) |> ParsedInput.ImplFile
+
+    if CodeFormatter.IsValidAST tree then
+        CodeFormatter.FormatAST(tree, file, None, FormatConfig.Default) |> printfn "%s"
+    else 
+        printfn "Bad F# syntax tree"
+
+    //let visitModulesAndNamespaces modulesOrNss =
+    //  for moduleOrNs in modulesOrNss do
+    //    let (SynModuleOrNamespace(lid, isRec, isMod, decls, xml, attrs, _, m)) = moduleOrNs
+    //    lid |> List.iter (fun x -> printfn "%A" x.idRange)
+    //    printfn "Namespace or module: %A" lid
+
+    //match tree with
+    //| ParsedInput.ImplFile(implFile) ->
+    //    // Extract declarations and walk over them
+    //    let (ParsedImplFileInput(fn, script, name, _, _, modules, _)) = implFile
+    //    visitModulesAndNamespaces modules
+    //| _ -> failwith "F# Interface file (*.fsi) not supported."
 
     0
 
