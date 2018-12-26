@@ -18,13 +18,13 @@
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="2.9.0" />
     <PackageReference Include="FSharp.Compiler.Service" Version="25.0.1" />
     <Compile Include="DomainTypes.fs" />
+    <Compile Include="CsharpParser.fs" />
     <Compile Include="Program.fs" />
     <None Include="Script.fsx" />
     <None Include="EmailSubscribersScript.fsx" />
     <PackageReference Include="FSharp.Compiler.Tools" Version="10.2.1" />
     <PackageReference Include="dotnet-fantomas" Version="2.9.1" />
     <None Include="DomainPrinter.fs" />
-    <None Include="CsharpParser.fs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Fantomas">
