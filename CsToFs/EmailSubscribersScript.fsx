@@ -1,4 +1,27 @@
-﻿open System
+﻿#r "/Users/sam.williams/.nuget/packages/newtonsoft.json/11.0.2/lib/net45/Newtonsoft.Json.dll"
+
+open Newtonsoft.Json
+open System.Collections.Generic
+
+let s = """ [{"Blaine Holt": 415609, "Celso12ssssssss Dolend": 78691}] """
+
+let main () = 
+
+    let driverLookup driver (dict:IDictionary<string,int>) = 
+        dict.[driver]
+
+    let r = JsonConvert.DeserializeObject<seq<IDictionary<string,int>>> s
+    let drivers = Seq.head r
+    let driverNames = drivers.Keys
+
+    let blaine = driverLookup "Blaine Holt" drivers
+
+    driverNames, blaine
+
+
+
+
+open System
 open System.IO
 
 let captalize (xs:string) = 
@@ -49,3 +72,6 @@ let processLines (lines: string[]) =
                 x, y, (List.last xs) )
 
     header :: result
+
+
+

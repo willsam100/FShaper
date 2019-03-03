@@ -11,7 +11,7 @@ type Pat =
     | Or of SynPat * SynPat
     | Ands of SynPat list
     | LongIdent of longDotId:LongIdentWithDots * (* holds additional ident for tooling *) Ident option * SynValTyparDecls option (* usually None: temporary used to parse "f<'a> x = x"*) * SynConstructorArgs  * accessibility:SynAccess option
-    | Tuple of SynPat list
+    | Tuple of Pat list
     | StructTuple of SynPat list
     | Paren of SynPat
     | ArrayOrList of bool * SynPat list
@@ -74,7 +74,7 @@ and
 
     /// F# syntax: new C(...)
     /// The flag is true if known to be 'family' ('protected') scope
-    | New of isProtected:bool * typeName:SynType
+    | New of isProtected:bool * typeName:SynType * expr:Expr
     
     /// F# syntax: 'while ... do ...'
     | While of whileSeqPoint:SequencePointInfoForWhileLoop * whileExpr:Expr * doExpr:Expr
@@ -85,7 +85,7 @@ and
     /// Expr.ForEach (spBind, seqExprOnly, isFromSource, pat, enumExpr, bodyExpr, mWholeExpr).
     ///
     /// F# syntax: 'for ... in ... do ...'
-    | ForEach of forSeqPoint:SequencePointInfoForForLoop * seqExprOnly:SeqExprOnly * isFromSource:bool * pat:SynPat * enumExpr:Expr * bodyExpr:Expr
+    | ForEach of forSeqPoint:SequencePointInfoForForLoop * seqExprOnly:SeqExprOnly * isFromSource:bool * pat:Pat * enumExpr:Expr * bodyExpr:Expr
 
     /// F# syntax: [ expr ], [| expr |]
     | ArrayOrListOfSeqExpr of isArray:bool * expr:Expr
@@ -125,7 +125,7 @@ and
     ///     "mCommas" are the ranges for interstitial commas, these only matter for parsing/design-time tooling, the typechecker may munge/discard them
     ///
     /// F# syntax: expr<type1,...,typeN>
-    //| TypeApp of expr:Expr * LESSrange:range * typeNames:SynType list * commaRanges:range list * GREATERrange:range option * typeArgsRange:range
+    | TypeApp of expr:Expr  * typeNames:SynType list
 
     /// LetOrUse(isRecursive, isUse, bindings, body, wholeRange)
     ///
@@ -170,7 +170,7 @@ and
     /// DotGet(expr, rangeOfDot, lid, wholeRange)
     ///
     /// F# syntax: expr.ident.ident
-    | DotGet of expr:Expr
+    | DotGet of expr:Expr * ident:LongIdentWithDots
 
     /// F# syntax: expr.ident...ident <- expr
     | DotSet of Expr * longDotId:LongIdentWithDots * Expr
@@ -310,6 +310,7 @@ type Method = {
     IsPrivate: bool
     IsOverride:bool
     Accessibility:SynAccess option
+    Attributes: (LongIdentWithDots * Expr option) list
 }
 
 type Prop = {
@@ -334,7 +335,7 @@ type Field = {
 
 type Attribute = {
     Name:string
-    Parameters:string option
+    Parameters:Expr option
 }
 
 type Class = {
@@ -380,3 +381,27 @@ type FsharpSyntax =
     | Prop of Prop
     | Method of Method
     | Empty
+
+
+
+//type Foo() = 
+    
+    //member this.HandleCaretPositionChanged(sender : obj, e : EventArgs) =
+        //if this.Editor.IsInAtomicUndo then ()
+        //else
+            //this.CancelQuickFixTimer()
+            //let mutable token = this.quickFixCancellationTokenSource.Token
+            //if this.AnalysisOptions.EnableFancyFeatures
+            //   && this.DocumentContext.ParsedDocument <> null then
+            //    if this.HasCurrentFixes then
+            //        let mutable curOffset = this.Editor.CaretOffset
+
+            //        for fix in this.smartTagTask.Result.CodeFixActions do
+            //            if !(!) then
+            //                this.RemoveWidget()
+            //                BreakStatement
+
+            //    smartTagTask <- GetCurrentFixesAsync(token)
+            //else this.RemoveWidget()
+
+

@@ -10,25 +10,27 @@
     <Authors>Sam Williams</Authors>
     <Description>Carries out the heavy lifting of converting C# to F#</Description>
   </PropertyGroup>
+  <Import Project="fsc.props" />
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <OtherFlags> --simpleresolution --nocopyfsharpcore</OtherFlags>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
     <OtherFlags> --simpleresolution --nocopyfsharpcore</OtherFlags>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Net.Compilers" Version="2.9.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="2.9.0" />
     <PackageReference Include="FSharp.Compiler.Service" Version="25.0.1" />
+    <PackageReference Include="FSharp.Core" Version="4.5.4" />
+    <PackageReference Include="FSharp.Compiler.Tools" Version="10.2.1" />
+    <PackageReference Include="dotnet-fantomas" Version="2.9.1" />
     <Compile Include="DomainTypes.fs" />
     <Compile Include="CsharpParser.fs" />
+    <Compile Include="Translation.fs" />
     <Compile Include="Program.fs" />
     <None Include="Script.fsx" />
     <None Include="EmailSubscribersScript.fsx" />
-    <PackageReference Include="FSharp.Compiler.Tools" Version="10.2.1" />
-    <PackageReference Include="dotnet-fantomas" Version="2.9.1" />
     <None Include="DomainPrinter.fs" />
-  </ItemGroup>
-  <ItemGroup>
-    <Reference Include="Fantomas">
-      <HintPath>..\..\..\Github\fantomas\src\Fantomas\bin\Debug\netstandard2.0\Fantomas.dll</HintPath>
-    </Reference>
+    <None Include="fsc.props" />
   </ItemGroup>
 </Project>
