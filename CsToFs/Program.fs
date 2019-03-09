@@ -1,14 +1,5 @@
 ﻿// Learn more about F# at http://fsharp.org
 open System
-open Microsoft.CodeAnalysis.CSharp
-open CsToFs
-open Microsoft.FSharp.Compiler.Ast
-open Microsoft.FSharp.Compiler.Range
-open Microsoft.FSharp.Compiler.SourceCodeServices.Structure
-open Microsoft.FSharp.Compiler.SourceCodeServices 
-open Fantomas
-open Fantomas.FormatConfig
-open TreeOps
     
 [<EntryPoint>]
 let main argv =
@@ -324,282 +315,33 @@ let main argv =
         using Android.App;
         using Firebase.Iid;
         using Android.Util;"""
-                    
-            
 
-    let visitor = new FileContentsDumper()
-    let indent = " " |> List.replicate 4 |> String.concat ""
+    let mvvmCross = """AppCenter.Start("cf32a57f-60ce-4a42-aac1-a84148c29b0d", typeof(Push));"""
 
-    let tree = 
-        //System.Console.In.ReadToEnd()
-        mvvmCross
-        |> SyntaxFactory.ParseSyntaxTree
+    let mvvmCross = 
+        """
+        void SendNotification(string messageBody)
+        {
+            var intent = new Intent(this, typeof(MainActivity));
+            intent.AddFlags(ActivityFlags.ClearTop);
+            var pendingIntent = PendingIntent.GetActivity(this, 0, intent, PendingIntentFlags.OneShot);
 
-    let file = "unknown.fs"
-    let createOpenStatements (name: UsingStatement) = 
-        (LongIdentWithDots (name.Namespace |> toIdent, [range0]), range0) |> SynModuleDecl.Open 
+            var notificationBuilder = new Notification.Builder(this)
+                        .SetContentTitle("FCM Message")
+                        .SetSmallIcon(Resource.Drawable.ic_launcher)
+                        .SetContentText(messageBody)
+                        .SetAutoCancel(true)
+                        .SetContentIntent(pendingIntent);
 
-    let toNamespace (ns:Namespace) mods = 
-        SynModuleOrNamespace (toIdent ns.Name,false,false, mods, PreXmlDocEmpty, [], None, range0)
+            var notificationManager = NotificationManager.FromContext(this);
 
-    let defaultModule mods = 
-        [SynModuleOrNamespace (toIdent "Program",false,true, mods, PreXmlDocEmpty, [], None, range0)]
+            notificationManager.Notify(0, notificationBuilder.Build());
+        }
+        """
 
-    let toFile moduleOrNs = 
-        ParsedImplFileInput (file, true, QualifiedNameOfFile (Ident()), [], [], moduleOrNs, (true, true)) 
-        |> ParsedInput.ImplFile
-
-    let toMethod (x:Method) = 
-        let methodName = LongIdentWithDots (toIdent ("this." + x.Name), [range0])
-
-        let argInfos = 
-            let args = 
-                x.Parameters |> List.map (fun x -> SynArgInfo ([],false, Ident(x.Name, range0) |> Some  ) )
-            let returnArgInfo = SynArgInfo ([],false, Ident(x.ReturnType, range0) |> Some  ) 
-            [returnArgInfo] :: args :: []
-
-        let namedArgs = 
-            let typeArgs = 
-                x.Parameters |> List.map (fun x -> 
-                    SynPat.Typed (
-                        SynPat.Named (SynPat.Wild range0, Ident(x.Name, range0), false, None, range0),
-                        SynType.LongIdent ( x.Type |> fixKeywords |> toLongIdentWithDots),  
-                        range0) )
-            SynPat.Paren (SynPat.Tuple (typeArgs, range0), range0)
-
-        let attributres = 
-            x.Attributes |> List.map (fun (name, args) -> 
-                {
-                    SynAttribute.Target = None
-                    SynAttribute.AppliesToGetterAndSetter = false
-                    SynAttribute.Range = range0
-                    SynAttribute.TypeName = name
-                    SynAttribute.ArgExpr = 
-                        match args with 
-                        | None -> SynExpr.Const (SynConst.Unit, range0)
-                        | Some x -> toSynExpr x
-                }
-            )
-
-        let trandformedTree = x.Body |> rewriteInLetExp |> rewriteReturnInIf
-
-        SynMemberDefn.Member 
-            (SynBinding.Binding ( x.Accessibility, SynBindingKind.NormalBinding, false, false, attributres,
-                PreXmlDoc.PreXmlDocEmpty,
-                SynValData (
-                    Some {
-                        MemberFlags.IsInstance = true
-                        MemberFlags.IsDispatchSlot = false 
-                        MemberFlags.IsOverrideOrExplicitImpl = false 
-                        MemberFlags.IsFinal = false
-                        MemberFlags.MemberKind = MemberKind.Member
-                    }, SynValInfo (argInfos, SynArgInfo ([], false, None)), None), // valData:SynValData *
-                SynPat.LongIdent
-                    (methodName, None, None, 
-                    Pats [namedArgs], None, range0 ), // headPat:SynPat *
-                None, // (SynType.LongIdent (toIdent "return", range0,[]) ), // returnInfo:SynBindingReturnInfo option *
-                trandformedTree |> toSynExpr, //|> addNewLineToLet file |> snd,
-                range0, //range:range *
-                NoSequencePointAtInvisibleBinding
-            ), range0)
-
-    let toProperty (x:Prop) = 
-
-        let methodName = LongIdentWithDots (toIdent ("this." + x.Name), [range0])
-
-        //let memberType = 
-            //match x.Get, x.Set with 
-            //| Some _, Some _ -> MemberKind.PropertyGetSet
-            //| Some _, _ -> MemberKind.PropertyGet
-            //| _, Some _ -> MemberKind.PropertySet
-            //| _,  _ -> 
-
-                //AutoProperty
-                  //([],false,smartTagPopupTimeoutId,
-                   //Some (LongIdent (LongIdentWithDots ([uint],[]))),
-                   //PropertyGetSet,<fun:_fsyacc_reductions@1421-324>,
-                   //PreXmlDoc
-                   //  ((5,50),Microsoft.FSharp.Compiler.Ast+XmlDocCollector),
-                   //None,
-                   //Null /home/user/Test.fsx (5,53--5,57) IsSynthetic=false,
-                   //Some /home/user/Test.fsx (5,58--5,70) IsSynthetic=false,
-                   ///home/user/Test.fsx (5,19--5,57) IsSynthetic=false);
-                //toLongIndent x.Type
-
-
-        let memberFlags = function 
-        | MemberKind.ClassConstructor
-        | MemberKind.Constructor
-        | MemberKind.Member
-        | MemberKind.PropertyGet
-        | MemberKind.PropertySet
-        | MemberKind.PropertyGetSet -> 
-            {
-                MemberFlags.IsDispatchSlot = false
-                MemberFlags.IsFinal = false
-                MemberFlags.IsOverrideOrExplicitImpl = false
-                MemberFlags.IsInstance = true
-                MemberFlags.MemberKind = MemberKind.PropertyGetSet
-
-            }
-
-        SynMemberDefn.AutoProperty 
-            ([],false, 
-                ident (x.Name, range0), 
-                SynType.LongIdent (LongIdentWithDots (toIdent x.Type,[range0]) ) |> Some,
-                MemberKind.PropertyGetSet, memberFlags, PreXmlDoc.PreXmlDocEmpty, x.Access, SynExpr.Null range0, None, range0
-                  )
-
-
-        //SynMemberDefn.Member 
-        //    (SynBinding.Binding ( Some SynAccess.Public, SynBindingKind.NormalBinding, false, false, [],
-        //        PreXmlDoc.PreXmlDocEmpty, //xmlDoc:PreXmlDoc *
-        //        SynValData (
-        //            Some {
-        //                MemberFlags.IsInstance = true
-        //                MemberFlags.IsDispatchSlot = false 
-        //                MemberFlags.IsOverrideOrExplicitImpl = false 
-        //                MemberFlags.IsFinal = false
-        //                MemberFlags.MemberKind = memberType
-        //            }, SynValInfo ([], SynArgInfo ([], false, Ident (x.Name, range0) |> Some )), None), // valData:SynValData *
-        //        SynPat.LongIdent
-        //            (methodName, None, None, 
-        //            Pats ([SynPat.Const (SynConst.Unit, range0 )]), None, range0 ), // headPat:SynPat *
-        //        None, // (SynType.LongIdent (toIdent "return", range0,[]) ), // returnInfo:SynBindingReturnInfo option *
-        //        Expr.Null |> toSynExpr,
-        //        range0, //range:range *
-        //        NoSequencePointAtInvisibleBinding
-        //), range0)
-
-
-    let toDefaultClass method = 
-        let x = 
-            ComponentInfo ([], [], [], toIdent "X", PreXmlDocEmpty, false, None, range0)
-
-        let methods = [method]
-        let ctor = SynMemberDefn.ImplicitCtor (None,[],[],None, range0)
-
-        SynTypeDefn.TypeDefn (x, SynTypeDefnRepr.ObjectModel (TyconUnspecified, [ctor] @ methods, range0), [], range0)
-        |> List.singleton
-        |> (fun x -> SynModuleDecl.Types (x, range0))
-
-    let toLet (x:Field) = 
-
-        let init = 
-            match x.Initilizer with 
-            | Some x -> x
-            | None -> Expr.Null
-
-        let binding = 
-            SynBinding.Binding (None, SynBindingKind.NormalBinding, false, true, [], PreXmlDocEmpty, 
-                SynValData (
-                    None, SynValInfo ([], SynArgInfo ([], false, Ident (x.Name, range0) |> Some )), None), // valData:SynValData *
-                SynPat.LongIdent
-                    (LongIdentWithDots (toIdent x.Name, [range0]), None, None, 
-                    Pats ([]), None, range0 ), None, 
-                    toSynExpr init, range0 , SequencePointAtBinding range0)
-        SynMemberDefn.LetBindings ([binding], false, false, range0)
-       
-
-    let toClass (cn:Class) = 
-        let att = 
-            cn.Attributes |> List.map (fun x -> 
-                let arg = 
-                    match x.Parameters with
-                    | None -> SynExpr.Paren (SynExpr.Ident (Ident("",range0)), range0, None, range0) 
-                    | Some attr -> toSynExpr attr
-
-                {
-                    SynAttribute.TypeName = LongIdentWithDots (toIdent x.Name, [range0])
-                    SynAttribute.ArgExpr = arg
-                    // SynExpr.Paren(SynExpr.Const SynConst.Char ',', range0, range0) 
-                    SynAttribute.AppliesToGetterAndSetter = false
-                    SynAttribute.Range = range0
-                    SynAttribute.Target = None
-                }
-            )
-        let x = 
-            ComponentInfo (att, [], [], toIdent cn.Name.Name, PreXmlDocEmpty, false, None, range0)
-
-        let properties = cn.Properties |> List.map toProperty
-        let methods = cn.Methods |> List.map toMethod
-        let fields = cn.Fields |> List.map toLet
-
-        let ctors = 
-            let ctor = SynMemberDefn.ImplicitCtor (None,[],[],None, range0)
-            cn.BaseClass |> Option.map (fun baseClass -> 
-                SynMemberDefn.ImplicitInherit (SynType.LongIdent (baseClass |> toLongIdentWithDots), SynExpr.Const (SynConst.Unit, range0), None, range0)
-            ) |> function 
-            | Some x -> [ctor; x]
-            | None -> [ctor]
-
-        SynTypeDefn.TypeDefn (x, SynTypeDefnRepr.ObjectModel (TyconUnspecified, ctors @ fields @ properties @ methods, range0), [], range0)
-        |> List.singleton
-        |> (fun x -> SynModuleDecl.Types (x, range0))
-
-    let t = tree.GetRoot()
-    t.ChildNodes()
-    |> Seq.fold (visitor.ParseSyntax) None
-    |> Option.map (fun x -> 
-        match x with 
-        | CsToFs.File f -> 
-            let mods = f.UsingStatements |> List.map createOpenStatements 
-            let ns = 
-                match f.Namespaces with 
-                | [] -> [{Name = "Foo"; Interfaces = []; Classes = [] }]
-                | xs -> xs 
-
-            let namespaces = 
-                ns |> List.map (fun x -> 
-                    let classes = 
-                        x.Classes |> List.map toClass
-                    toNamespace x (mods @ classes) )
-            toFile namespaces
-
-        | CsToFs.UsingStatement us -> 
-            let ns = {Name = "Foo"; Interfaces = []; Classes = [] }           
-            toNamespace ns [createOpenStatements us] |> List.singleton |> toFile
-        
-                //   |> List.singleton |> defaultModule |> toFile
-        | CsToFs.Namespace ns -> toNamespace ns [] |> List.singleton |> toFile
-        | CsToFs.Class cn ->  cn  |> toClass |> List.singleton |> defaultModule |> toFile
-        | CsToFs.Method m ->  m |> toMethod |> toDefaultClass |> List.singleton |> defaultModule |> toFile
-        )
-    |> Option.map(removeFhsarpIn file)
-    //|> Option.map (fun tree -> 
-    //    let config = 
-    //        {
-    //            FormatConfig.Default with FormatConfig.PageWidth = 1000
-    //        }
-
-    //    let x = CodeFormatter.FormatAST(tree, file, None, FormatConfig.Default) 
-    //    printfn "%s" x
-    //    x)
-    //|> Option.map(fun fsharpSource -> 
-        //let tree = getUntypedTree(file, fsharpSource)
-        //removeFhsarpIn file tree)
-    |> Option.iter (fun tree -> 
-        // printfn "------------------------------------------------------------"
-        // printfn "%A" tree
-
-        // printfn "------------------------------------------------------------"
-
-        let config = 
-            {
-                FormatConfig.Default with 
-                    FormatConfig.SemicolonAtEndOfLine = false
-                    FormatConfig.StrictMode = true
-                    FormatConfig.PageWidth = 80
-                    FormatConfig.SpaceAfterComma = true
-                    FormatConfig.SpaceBeforeArgument = true
-                    FormatConfig.SpaceBeforeColon = false
-            }
-
-        if CodeFormatter.IsValidAST tree then
-            CodeFormatter.FormatAST(tree, file, None, config) |> printfn "%s"
-        else 
-            printfn "Bad F# syntax tree"
-    )
+    let input = mvvmCross
+    CsToFs.Core.Converter.run input |> printfn "%s"
+    // let input = System.Console.In.ReadToEnd()
 
 
 
@@ -631,24 +373,24 @@ let main argv =
     let input = """
         [<IntentFilter([| "com.google.firebase.INSTANCE_ID_EVENT" |])>]
         type MyFirebaseIIDService() = 
-            ()
+            let x = typeof<Push>
 
     """
     // File name in Unix format
     let file = "/home/user/Test.fsx"
 
-    let config = 
-        {
-            FormatConfig.Default with 
-                FormatConfig.SemicolonAtEndOfLine = false
-                FormatConfig.StrictMode = true
-                FormatConfig.PageWidth = 120
-                FormatConfig.SpaceAfterComma = true
-                FormatConfig.SpaceBeforeArgument = true
-                FormatConfig.SpaceBeforeColon = false
-                FormatConfig.IndentSpaceNum = 4
-                FormatConfig.PreserveEndOfLine = false
-        }
+    //let config = 
+        //{
+        //    FormatConfig.Default with 
+        //        FormatConfig.SemicolonAtEndOfLine = false
+        //        FormatConfig.StrictMode = true
+        //        FormatConfig.PageWidth = 120
+        //        FormatConfig.SpaceAfterComma = true
+        //        FormatConfig.SpaceBeforeArgument = true
+        //        FormatConfig.SpaceBeforeColon = false
+        //        FormatConfig.IndentSpaceNum = 4
+        //        FormatConfig.PreserveEndOfLine = false
+        //}
 
 
     // Get the AST of sample F# code

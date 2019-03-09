@@ -27,10 +27,14 @@
     <Compile Include="DomainTypes.fs" />
     <Compile Include="CsharpParser.fs" />
     <Compile Include="Translation.fs" />
+    <Compile Include="Converter.fs" />
     <Compile Include="Program.fs" />
     <None Include="Script.fsx" />
     <None Include="EmailSubscribersScript.fsx" />
     <None Include="DomainPrinter.fs" />
     <None Include="fsc.props" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\CsToFs.Core\CsToFs.Core.fsproj" />
   </ItemGroup>
 </Project>

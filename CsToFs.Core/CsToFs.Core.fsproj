@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FSharp.Compiler.Service" Version="25.0.1" />
+    <PackageReference Include="FSharp.Compiler.Tools" Version="10.2.1" />
+    <PackageReference Include="FSharp.Core" Version="4.6.2" />
+    <PackageReference Include="Microsoft.Net.Compilers" Version="2.10.0" />
+    <PackageReference Include="Fantomas" Version="2.9.2" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="2.10.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="DomainTypes.fs" />
+    <Compile Include="CsharpParser.fs" />
+    <Compile Include="Translation.fs" />
+    <Compile Include="Converter.fs" />
+  </ItemGroup>
+</Project>
