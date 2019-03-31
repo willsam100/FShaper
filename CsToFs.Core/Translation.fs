@@ -158,7 +158,114 @@ module TreeOps =
                 //Expr.ForEach (a,b,c,d, walker e, walker f)
             | _ -> tree
         walker tree
+
+    let wrapNewKeyword tree = 
+
+        let rec wrapNewInParen tree = 
         
+            let rec walker tree = 
+                match tree with 
+                | Expr.New (a,b,c) -> Expr.Paren (Expr.New (a,b,c))
+                | Expr.Sequential (s1,s2,s3,s4) -> Expr.Sequential (s1,s2, walker s3, walker s4)
+                | Expr.IfThenElse (a,b,c,d,e) -> 
+                    let a = walker a
+                    let b = walker b
+                    let c = c |> Option.map walker
+                    Expr.IfThenElse (a,b,c,d,e)
+                | Expr.App (a,b,c,d) -> 
+
+                    let c = walker c
+                    let d = walker d
+                    Expr.App (a,b,c,d)
+
+                | Expr.LetOrUse (a,b,c,d) -> 
+                    let mapping = 
+                        c |> List.map (function 
+                            | LetBind (a,b,c,d,e,f,g,h) -> 
+                                LetBind (a,b,c,d,e,f,g,walker h) )
+                    Expr.LetOrUse (a,b,mapping, walker d) 
+
+                | Expr.ForEach (a,b,c,d,e,f) -> 
+                    Expr.ForEach (a,b,c,d, walker e, walker f)
+
+                | _ -> tree
+            walker tree
+
+
+        let rec walker tree = 
+            match tree with
+            | Expr.DotGet (a,b) -> Expr.DotGet (wrapNewInParen a,b)
+            | Expr.Sequential (s1,s2,s3,s4) -> 
+                match s3 with 
+                | Expr.IfThenElse (x,y,z,i,j) when Option.isNone z -> 
+                    Expr.IfThenElse (x,y, Some s4, i, j)
+
+                | _ -> 
+                    Expr.Sequential (s1,s2,walker s3,walker s4)
+
+            | Expr.IfThenElse (a,b,c,d,e) -> 
+                let a = walker a
+                let b = walker b
+                let c = c |> Option.map walker
+                Expr.IfThenElse (a,b,c,d,e)
+
+            | Expr.App (a,b,c,d) -> 
+
+                let c = walker c
+                let d = walker d
+                Expr.App (a,b,c,d)
+
+            | Expr.LetOrUse (a,b,c,d) -> 
+                let mapping = 
+                    c |> List.map (function 
+                        | LetBind (a,b,c,d,e,f,g,h) -> 
+                            LetBind (a,b,c,d,e,f,g,walker h) )
+
+                Expr.LetOrUse (a,b,mapping, walker d) 
+
+            | Expr.ForEach (a,b,c,d,e,f) -> 
+                Expr.ForEach (a,b,c,d, walker e, walker f)
+            | _ -> tree
+        walker tree
+
+    let replaceDotGetIfNotInLetBinding tree = 
+
+        let rec walker tree = 
+            match tree with
+            | Expr.DotGet (a,b) -> 
+                match a with 
+                | Expr.LongIdent (c, prefixName) -> 
+                    let b = joinLongIdentWithDots b
+                    let prefixName = joinLongIdentWithDots prefixName
+                    sprintf "%s.%s" prefixName b |> toLongIdent
+                    
+                | _ -> Expr.DotGet (a,b)
+            
+            | Expr.Sequential (s1,s2,s3,s4) -> 
+                match s3 with 
+                | Expr.IfThenElse (x,y,z,i,j) when Option.isNone z -> 
+                    Expr.IfThenElse (x,y, Some s4, i, j)
+
+                | _ -> 
+                    Expr.Sequential (s1,s2,walker s3,walker s4)
+
+            | Expr.IfThenElse (a,b,c,d,e) -> 
+                let a = walker a
+                let b = walker b
+                let c = c |> Option.map walker
+                Expr.IfThenElse (a,b,c,d,e)
+
+            | Expr.App (a,b,c,d) -> 
+
+                let c = walker c
+                let d = walker d
+                Expr.App (a,b,c,d)
+
+            | Expr.ForEach (a,b,c,d,e,f) -> 
+                Expr.ForEach (a,b,c,d, walker e, walker f)
+            | _ -> tree
+        walker tree
+
     let rec rewriteInLetExp tree = 
 
         let isLetPlaceholder exp = 
@@ -197,6 +304,40 @@ module TreeOps =
         | Expr.ForEach (a,b,c,d,e,f) -> 
             let e2 = rewriteInLetExp e
             let f2 = rewriteInLetExp f
+
+            Expr.ForEach (a,b,c,d, e2, f2)
+
+        | _ -> tree
+
+    let rec rewriteMethodWithPrefix methodNames tree = 
+        sprintf "MethodNames - %A" methodNames |> System.Diagnostics.Debug.WriteLine
+        let recurse = rewriteMethodWithPrefix methodNames
+
+        let isLetPlaceholder exp = 
+            match exp with 
+            | Expr.InLetPlaceholder -> true
+            | _ -> false
+
+        match tree with 
+        | Expr.LongIdent (a, b) -> 
+            sprintf "MethodNames: %A, b: %A" methodNames b |> System.Diagnostics.Debug.WriteLine
+            if methodNames |> Seq.exists (fun name -> b.ToString().Contains name ) then 
+
+                let idents = b.Lid |> List.map (fun x -> x.idText) |> String.concat "."
+                Expr.LongIdent (a, idents |> sprintf "this.%s" |> toLongIdentWithDots )
+            else Expr.LongIdent (a,b)
+            
+        // root of tree should not be contain immeidate child of InLetPlaceholder (has no meaning)
+        | Expr.LetOrUse (x,y,z,i) ->  
+            Expr.LetOrUse (x,y,z,recurse i)
+
+        | Expr.Sequential (s1,s2,s3,s4) -> System.Diagnostics.Debug.WriteLine "Expr.Sequential"; Expr.Sequential (s1,s2,recurse s3,recurse s4)
+        | Expr.App (a,b,c,d) -> System.Diagnostics.Debug.WriteLine "App"; Expr.App (a,b, recurse c, recurse d)
+        | Expr.IfThenElse (a,b,c,d,e) -> Expr.IfThenElse (a,recurse b,c |> Option.map recurse,d,e)
+
+        | Expr.ForEach (a,b,c,d,e,f) -> 
+            let e2 = recurse e
+            let f2 = recurse f
 
             Expr.ForEach (a,b,c,d, e2, f2)
 

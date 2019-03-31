@@ -1,5 +1,9 @@
 ﻿// Learn more about F# at http://fsharp.org
 open System
+open Fantomas
+open CsToFs.Core
+open Fantomas.FormatConfig
+open System.Text.RegularExpressions
     
 [<EntryPoint>]
 let main argv =
@@ -340,8 +344,8 @@ let main argv =
         """
 
     let input = mvvmCross
-    CsToFs.Core.Converter.run input |> printfn "%s"
-    // let input = System.Console.In.ReadToEnd()
+    //let input = System.Console.In.ReadToEnd()
+    //CsToFs.Core.Converter.run input |> printfn "%s"
 
 
 
@@ -370,12 +374,18 @@ let main argv =
     //    CancelSmartTagPopupTimeout ();
     //}
 
-    let input = """
-        [<IntentFilter([| "com.google.firebase.INSTANCE_ID_EVENT" |])>]
-        type MyFirebaseIIDService() = 
-            let x = typeof<Push>
+    let input = 
+        """
+            type MyFirebaseIIDService() =
 
-    """
+                member this.OnTokenRefresh() =
+                    let mutable refreshedToken = FirebaseInstanceId.Instance.Token
+                    let mutable s = "Refreshed token: " + refreshedToken
+                    Log.Debug(TAG, s)
+                    this.SendRegistrationToServer(refreshedToken)
+                
+
+        """ 
     // File name in Unix format
     let file = "/home/user/Test.fsx"
 
@@ -394,9 +404,18 @@ let main argv =
 
 
     // Get the AST of sample F# code
-    // let tree = getUntypedTree(file, input)
-    // printfn "%A" tree
-    // CodeFormatter.FormatAST(tree, file, None, FormatConfig.Default) |> printfn "%s"
+    let tree = TreeOps.getUntypedTree(file, input)
+
+    let regexRepleace (pattern:string, replace:string) (s:string) = 
+        Regex.Replace(s, pattern, replace)
+
+    tree.ToString()
+    |> regexRepleace("\n\s+/home/user/Test.fsx", "") 
+    |> regexRepleace("/home/user/Test.fsx", "") 
+    |> printfn "%s"
+    //sTree.Replace("/home/user/Test.fsx", "") |> printfn "%s"
+
+    CodeFormatter.FormatAST(tree, file, None, FormatConfig.Default) |> printfn "%s"
 
     //let tree = 
         //ParsedImplFileInput (file, false, QualifiedNameOfFile (Ident()), [], [], [

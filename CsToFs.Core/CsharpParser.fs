@@ -33,13 +33,20 @@ module Parser =
         | x::[] -> x
         | [] -> Expr.Const SynConst.Unit
 
+    let joinLongIdentWithDots (b:LongIdentWithDots) = 
+        b.Lid |> List.map (fun x -> x.idText) |> String.concat "." 
+
     let mapLongIdent f ident = 
         match ident with 
-        | Expr.LongIdent (a,b) -> b.Lid |> List.map (fun x -> x.idText) |> String.concat "." |> f |> toLongIdent
+        | Expr.LongIdent (a,b) -> b |> joinLongIdentWithDots |> f |> toLongIdent
         | x -> x
 
     let toPatId ident = 
         SynSimplePat.Id (Ident(ident, range0), None, false, true, false, range0)
+
+    //let patLongIdent (s:string) = 
+        //SynPat.Long
+    
 
 [<AutoOpen>]
 module SimpleFormatter = 
@@ -579,19 +586,20 @@ type LineTransformer() =
             //x.WithoutTrivia().ToFullString() |> Line
 
     static member ParseExpression (node:ExpressionSyntax, ?withoutSelfIdentifier) = 
-        printfn "%A %A" node withoutSelfIdentifier
+
+        if node = null then  printfn "Node was null"; Expr.Const SynConst.Unit else
+
+        printfn "%A %A, %A" node withoutSelfIdentifier (node.GetType())
         let format =            
             match withoutSelfIdentifier with 
             | Some x when x  -> id
-            | _ -> 
-                (fun (x:string) -> 
-                    if x.Length >= 1 && Char.IsLower x.[0] then x 
-                    else sprintf "this.%s" x)
+            | _ -> id
+                //(fun (x:string) -> 
+                    //if x.Length >= 1 && Char.IsLower x.[0] then x 
+                    //else sprintf "this.%s" x)
 
         match node with
         | :? IdentifierNameSyntax as x -> LineTransformer.ParseChsarpNode x
-
-
         | :? AnonymousFunctionExpressionSyntax as x -> 
             match x with 
             | :? LambdaExpressionSyntax as x -> 
@@ -678,14 +686,19 @@ type LineTransformer() =
         | :? InstanceExpressionSyntax as x -> toLongIdent "this" //(fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "InstanceExpressionSyntax"
         | :? InterpolatedStringExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "InterpolatedStringExpressionSyntax"
         | :? InvocationExpressionSyntax as x -> 
+        
             let args =  
                 x.ArgumentList.Arguments 
                 |> Seq.map (fun x -> LineTransformer.ParseChsarpNode x )
                 |> Seq.toList
                 |> Expr.Tuple 
 
-            let name = 
-                x.Expression.WithoutTrivia().ToFullString() |> format  |> toLongIdent
+            printfn "InvocationExpressionSyntax: %A" args
+            printfn "Expression: %A, %A" x.Expression (x.Expression.GetType())
+
+            let name = x.Expression |> LineTransformer.ParseChsarpNode
+            printfn "Nmae: %A" name
+            printfn ""
             Expr.App (ExprAtomicFlag.NonAtomic, false, name, Expr.Paren args)
 
         //| :? IsPatternExpressionSyntax as x -> ()
@@ -694,9 +707,15 @@ type LineTransformer() =
         //| :? MakeRefExpressionSyntax as x -> ()
         | :? MemberAccessExpressionSyntax as x ->
 
+            //x.Name
+            match x.OperatorToken.Text with 
+            | "." -> Expr.DotGet(x.Expression |> LineTransformer.ParseExpression, x.Name.WithoutTrivia().ToFullString() |> toLongIdentWithDots)
+            
+            
 
 
-            x.WithoutTrivia().ToFullString() |> format |> toLongIdent
+
+            //x.WithoutTrivia().ToFullString() |> format |> toLongIdent
 
             //let root = x.Expression |> LineTransformer.ParseChsarpNode |> mapLongIdent (fun x -> sprintf "this.%s" x)
             //let arg = x.Name.Identifier.ValueText |> toLongIdent
@@ -709,11 +728,16 @@ type LineTransformer() =
 
             let typeName = x.Type.WithoutTrivia().ToFullString() |> toLongIdentWithDots
             printfn "ObjectCreationExpressionSyntax: %b" (x.Initializer = null)
-            let init = LineTransformer.ParseExpression (x.Initializer, true)
+
+            let init = 
+                match x.Initializer with
+                | null ->  Expr.Const SynConst.Unit
+                | initExp ->  LineTransformer.ParseExpression (initExp, true)
 
             let joinArgs xs = 
                 match xs, init with 
                 | Expr.Tuple xs, Expr.Tuple ys -> Expr.Tuple (xs @ ys)
+                | Expr.Tuple xs, Expr.Const SynConst.Unit -> Expr.Tuple xs
                 | _, _ -> failwithf "Unexpected synax constructing class: %s" <| x.Type.ToFullString()                
 
             let args = 
@@ -807,17 +831,24 @@ type FileContentsDumper() =
             |> Seq.collect (fun x -> 
                 x.Attributes 
                 |> Seq.map (fun x -> 
-
-                    let args = 
-
-
+                    let attributesValues = 
                         x.ArgumentList
-                        |> Option.ofObj 
-                        |> Option.map (fun x -> 
-                            LineTransformer.ParseChsarpNode (x, false) )
+                        |> Option.ofObj
+                        |> Option.map (fun x -> x.Arguments)
+                        |> (Option.toList >> List.toSeq >> Seq.concat)
+                        |> Seq.map (fun y -> 
+
+                            if isNull y.NameEquals then 
+                                LineTransformer.ParseChsarpNode (y.Expression, false) |>  AttributeValue
+                            else 
+                                NamedAttributeValue 
+                                    (LineTransformer.ParseChsarpNode (y.NameEquals.Name, false), 
+                                    LineTransformer.ParseChsarpNode (y.Expression, false)) )
+                        |> Seq.toList
+                        
                     {
                         Attribute.Name = x.Name.WithoutTrivia().ToFullString()
-                        Attribute.Parameters = args }
+                        Attribute.Parameters = attributesValues }
             ))
             |> Seq.toList
 

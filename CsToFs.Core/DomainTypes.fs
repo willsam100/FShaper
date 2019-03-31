@@ -333,9 +333,13 @@ type Field = {
     Initilizer:Expr option
 }
 
+type AttributeValue = 
+| AttributeValue of Expr
+| NamedAttributeValue of (Expr * Expr)
+
 type Attribute = {
     Name:string
-    Parameters:Expr option
+    Parameters:AttributeValue list
 }
 
 type Class = {

@@ -50,7 +50,7 @@ module FormatOuput =
             Attributes = []
         }
 
-    let toMethod (x:Method) = 
+    let toMethod methodNames (x:Method) = 
         let methodName = LongIdentWithDots (toIdent ("this." + x.Name), [range0])
 
         let argInfos = 
@@ -81,8 +81,14 @@ module FormatOuput =
                         | Some x -> toSynExpr x
                 }
             )
-
-        let trandformedTree = x.Body |> rewriteInLetExp |> rewriteReturnInIf
+            
+        let trandformedTree = 
+            x.Body 
+            |> replaceDotGetIfNotInLetBinding
+            |> rewriteInLetExp 
+            |> rewriteReturnInIf 
+            |> wrapNewKeyword
+            |> rewriteMethodWithPrefix methodNames
 
         SynMemberDefn.Member 
             (SynBinding.Binding ( x.Accessibility, SynBindingKind.NormalBinding, false, false, attributres,
@@ -106,27 +112,7 @@ module FormatOuput =
 
     let toProperty (x:Prop) = 
 
-        let methodName = LongIdentWithDots (toIdent ("this." + x.Name), [range0])
-
-        //let memberType = 
-            //match x.Get, x.Set with 
-            //| Some _, Some _ -> MemberKind.PropertyGetSet
-            //| Some _, _ -> MemberKind.PropertyGet
-            //| _, Some _ -> MemberKind.PropertySet
-            //| _,  _ -> 
-
-                //AutoProperty
-                  //([],false,smartTagPopupTimeoutId,
-                   //Some (LongIdent (LongIdentWithDots ([uint],[]))),
-                   //PropertyGetSet,<fun:_fsyacc_reductions@1421-324>,
-                   //PreXmlDoc
-                   //  ((5,50),Microsoft.FSharp.Compiler.Ast+XmlDocCollector),
-                   //None,
-                   //Null /home/user/Test.fsx (5,53--5,57) IsSynthetic=false,
-                   //Some /home/user/Test.fsx (5,58--5,70) IsSynthetic=false,
-                   ///home/user/Test.fsx (5,19--5,57) IsSynthetic=false);
-                //toLongIndent x.Type
-
+        let properyName = LongIdentWithDots (toIdent ("this." + x.Name), [range0])
 
         let memberFlags = function 
         | MemberKind.ClassConstructor
@@ -144,33 +130,76 @@ module FormatOuput =
 
             }
 
-        SynMemberDefn.AutoProperty 
-            ([],false, 
-                ident (x.Name, range0), 
-                SynType.LongIdent (LongIdentWithDots (toIdent x.Type,[range0]) ) |> Some,
-                MemberKind.PropertyGetSet, memberFlags, PreXmlDoc.PreXmlDocEmpty, x.Access, SynExpr.Null range0, None, range0
-                  )
+        let makeGetter getter = 
+            let memberOptions = 
+                {   
+                    IsInstance = true
+                    IsDispatchSlot = false
+                    IsOverrideOrExplicitImpl = false
+                    IsFinal = false
+                    MemberKind = MemberKind.PropertyGet }
 
+            let synVaInfo = 
+                SynValInfo
+                    ([[SynArgInfo ([],false,None)]; []],SynArgInfo ([],false,None))
+                         
+            let headPat = 
+                SynPat.LongIdent
+                    (properyName, toSingleIdent "set" |> Some, None, 
+                            SynConstructorArgs.Pats (
+                                [SynPat.Paren (SynPat.Const (SynConst.Unit, range0), range0  )]),
+                                None, range0)
 
-        //SynMemberDefn.Member 
-        //    (SynBinding.Binding ( Some SynAccess.Public, SynBindingKind.NormalBinding, false, false, [],
-        //        PreXmlDoc.PreXmlDocEmpty, //xmlDoc:PreXmlDoc *
-        //        SynValData (
-        //            Some {
-        //                MemberFlags.IsInstance = true
-        //                MemberFlags.IsDispatchSlot = false 
-        //                MemberFlags.IsOverrideOrExplicitImpl = false 
-        //                MemberFlags.IsFinal = false
-        //                MemberFlags.MemberKind = memberType
-        //            }, SynValInfo ([], SynArgInfo ([], false, Ident (x.Name, range0) |> Some )), None), // valData:SynValData *
-        //        SynPat.LongIdent
-        //            (methodName, None, None, 
-        //            Pats ([SynPat.Const (SynConst.Unit, range0 )]), None, range0 ), // headPat:SynPat *
-        //        None, // (SynType.LongIdent (toIdent "return", range0,[]) ), // returnInfo:SynBindingReturnInfo option *
-        //        Expr.Null |> toSynExpr,
-        //        range0, //range:range *
-        //        NoSequencePointAtInvisibleBinding
-        //), range0)
+            let returnInfo = SynBindingReturnInfo (toLongIdentWithDots x.Name |> SynType.LongIdent , range0, [])
+
+            SynMemberDefn.Member (
+                SynBinding.Binding
+                    (None, NormalBinding, false, false, [], 
+                        PreXmlDocEmpty, SynValData (Some memberOptions, synVaInfo, None), headPat, Some returnInfo, getter |> toSynExpr, range0, NoSequencePointAtInvisibleBinding), range0)   
+
+        let makeSetter setter = 
+            let memberOptions = 
+                {   
+                    IsInstance = true
+                    IsDispatchSlot = false
+                    IsOverrideOrExplicitImpl = false
+                    IsFinal = false
+                    MemberKind = MemberKind.PropertySet }
+
+            let setterIdent = toSingleIdent "value" |> Some
+
+            let synVaInfo = 
+               SynValInfo
+                 ([
+                    [SynArgInfo ([],false,None)]
+                    [SynArgInfo ([],false, setterIdent)  ]],
+                    SynArgInfo ([],false,None) )
+
+            let headPat = 
+                SynPat.LongIdent 
+                    (properyName, toSingleIdent "set" |> Some, None, 
+                            SynConstructorArgs.Pats (
+                                [SynPat.Named (SynPat.Wild range0, toSingleIdent "value", false, None,range0)]),
+                                None, range0)
+                                
+            SynMemberDefn.Member (
+                SynBinding.Binding
+                    (None, NormalBinding, false, false, [], 
+                        PreXmlDocEmpty, SynValData (Some memberOptions, synVaInfo, None), headPat, None, setter |> toSynExpr, range0, NoSequencePointAtInvisibleBinding), range0)   
+
+        match x.Get, x.Set with 
+        | None, None -> 
+
+            SynMemberDefn.AutoProperty 
+                ([],false, 
+                    ident (x.Name, range0), 
+                    SynType.LongIdent (LongIdentWithDots (toIdent x.Type,[range0]) ) |> Some,
+                    MemberKind.PropertyGetSet, memberFlags, PreXmlDoc.PreXmlDocEmpty, x.Access, SynExpr.Null range0, None, range0
+                      ) |> List.singleton
+
+        | Some getter, None -> [makeGetter getter]
+        | None, Some setter -> [makeSetter setter;]
+        | Some getter, Some setter -> [makeGetter getter; makeSetter setter;]
 
     let toDefaultClass method = 
         let x = 
@@ -206,8 +235,26 @@ module FormatOuput =
             cn.Attributes |> List.map (fun x -> 
                 let arg = 
                     match x.Parameters with
-                    | None -> SynExpr.Paren (SynExpr.Ident (Ident("",range0)), range0, None, range0) 
-                    | Some attr -> toSynExpr attr
+                    | [] -> SynExpr.Paren (SynExpr.Ident (Ident("",range0)), range0, None, range0) 
+                    | xs -> 
+
+                        let items = xs |> List.map (function
+                            | AttributeValue.AttributeValue x -> toSynExpr x
+                            | AttributeValue.NamedAttributeValue (left, right) -> 
+                                let left = toSynExpr left
+                                let right = toSynExpr right
+                                
+                                let infixEquals = 
+                                    SynExpr.App
+                                        (ExprAtomicFlag.NonAtomic, true, toSingleIdent "op_Equality" |> SynExpr.Ident, left, range0)
+
+                                SynExpr.App (ExprAtomicFlag.NonAtomic, false, infixEquals, right, range0)
+                        )
+                      
+                        let tuple = 
+                            SynExpr.Tuple (items, [], range0)
+
+                        SynExpr.Paren (tuple, range0, None, range0) 
 
                 {
                     SynAttribute.TypeName = LongIdentWithDots (toIdent x.Name, [range0])
@@ -221,14 +268,50 @@ module FormatOuput =
         let x = 
             ComponentInfo (att, [], [], toIdent cn.Name.Name, PreXmlDocEmpty, false, None, range0)
 
-        let properties = cn.Properties |> List.map toProperty
-        let methods = cn.Methods |> List.map toMethod
+        let properties = cn.Properties |> List.collect toProperty
+        let methodNames = cn.Methods |> List.map (fun x -> x.Name.Replace ("this.", ""))
+        let methods = cn.Methods |> List.map (toMethod methodNames)
         let fields = cn.Fields |> List.map toLet
 
         let ctors = 
-            let ctor = SynMemberDefn.ImplicitCtor (None,[],[],None, range0)
+
+            let mainCtor = 
+                cn.Constructors 
+                |> List.sortByDescending (fun x -> x.Parameters.Length)
+                |> List.tryHead
+
+            let ctor = 
+                mainCtor
+                |> Option.map (fun x -> 
+
+                    let classArgs = 
+                        x.Parameters |> List.map (fun x -> 
+                            SynSimplePat.Typed
+                                (SynSimplePat.Id 
+                                    (toSingleIdent x.Name, None, 
+                                    false, false, false, range0), 
+                                toLongIdentWithDots x.Type |> SynType.LongIdent, range0) )
+                    SynMemberDefn.ImplicitCtor (None,[], classArgs, None, range0) )
+                    
+                |> function 
+                | Some c -> c
+                | None -> SynMemberDefn.ImplicitCtor (None,[],[],None, range0)
+
             cn.BaseClass |> Option.map (fun baseClass -> 
-                SynMemberDefn.ImplicitInherit (SynType.LongIdent (baseClass |> toLongIdentWithDots), SynExpr.Const (SynConst.Unit, range0), None, range0)
+
+                let args = 
+                    mainCtor
+                    |> Option.map (fun x -> 
+                        let items = x.SubclassArgs |> List.map (toSingleIdent >> SynExpr.Ident)
+                        SynExpr.Paren (SynExpr.Tuple (items, [], range0), range0, None, range0) )
+                        
+                    |> function
+                    | Some x -> x
+                    | None -> SynExpr.Const (SynConst.Unit, range0)
+
+                SynMemberDefn.ImplicitInherit 
+                    (SynType.LongIdent (baseClass |> toLongIdentWithDots), args, None, range0)
+                    
             ) |> function 
             | Some x -> [ctor; x]
             | None -> [ctor]
@@ -290,8 +373,8 @@ let run (input:string) =
                 //   |> List.singleton |> defaultModule |> toFile
         | CsToFs.Core.Namespace ns -> FormatOuput.toNamespace ns [] |> List.singleton |> FormatOuput.toFile
         | CsToFs.Core.Class cn ->  cn  |> FormatOuput.toClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
-        | CsToFs.Core.Method m ->  m |> FormatOuput.toMethod |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
-        | CsToFs.Core.Field f ->  f |> Seq.head |> FormatOuput.inMethod |> FormatOuput.toMethod |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
+        | CsToFs.Core.Method m ->  m |> FormatOuput.toMethod [m.Name] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
+        | CsToFs.Core.Field f ->  f |> Seq.head |> FormatOuput.inMethod |> FormatOuput.toMethod [] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
         )
     |> Option.map(removeFhsarpIn FormatOuput.file)
     //|> Option.map (fun tree -> 
@@ -307,10 +390,9 @@ let run (input:string) =
         //let tree = getUntypedTree(file, fsharpSource)
         //removeFhsarpIn file tree)
     |> Option.map (fun tree -> 
-        // printfn "------------------------------------------------------------"
-        // printfn "%A" tree
-
-        // printfn "------------------------------------------------------------"
+        printfn "------------------------------------------------------------"
+        printfn "%A" tree
+        printfn "------------------------------------------------------------"
 
         let config = 
             {
@@ -324,7 +406,10 @@ let run (input:string) =
             }
 
         if CodeFormatter.IsValidAST tree then
-            CodeFormatter.FormatAST(tree, FormatOuput.file, None, config) 
+
+            let tree = CodeFormatter.FormatAST(tree, FormatOuput.file, None, config) 
+
+            tree
             |> (fun x -> x.Replace("namespace ``Namespace579084dc-3f6e-11e9-85bb-d721e145d6a1``\n", ""))
             |> (fun x -> x.Replace("type ``Klass067803f4-3f6e-11e9-b4df-6f8305ceb4a6``() =\n", ""))
             |> (fun x -> x.Replace("module ``Program35949ae4-3f6e-11e9-b4dc-230deb73e77f``\n\n", ""))
@@ -332,15 +417,13 @@ let run (input:string) =
             |> (fun x -> x.Replace("member this.Method156143763f6e11e984e11f16c4cfd728() =\n", ""))
             |> (fun x -> 
                 let newLines = x.ToCharArray() |> Array.filter (fun x -> x ='\n') |> Array.length
-                if newLines >= 2 then x 
+                if newLines >= 2 && (x.Contains "type" || x.Contains "module") then x 
                 else 
-                    let rec reduceIndent (x:string) = 
-                        if x.Contains "  " then 
-                            x.Replace("  ", "")
-                            |> reduceIndent
-                        else x                        
-                    reduceIndent x )
+                    let reduceIndent (x:string) = 
+                        if x.StartsWith "    " then x.Substring 4 else x                        
+                        
+                    x.Split '\n' |> Array.map reduceIndent |> String.concat "\n" )
         else  "Bad F# syntax tree" ) 
     |> function 
-    | Some x -> x
+    | Some x -> x.Trim()
     | None -> "Invalid C# syntax tree"
