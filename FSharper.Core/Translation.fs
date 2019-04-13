@@ -1,7 +1,6 @@
-﻿namespace CsToFs.Core
+﻿namespace FSharper.Core
 
 open Microsoft.CodeAnalysis.CSharp
-open CsToFs
 open Microsoft.FSharp.Compiler.Ast
 open Microsoft.FSharp.Compiler.Range
 open Microsoft.FSharp.Compiler.SourceCodeServices.Structure

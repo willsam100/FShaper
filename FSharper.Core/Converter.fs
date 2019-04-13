@@ -1,11 +1,10 @@
-﻿module CsToFs.Core.Converter
+﻿module FSharper.Core.Converter
 open Microsoft.FSharp.Compiler.Ast
 open Microsoft.FSharp.Compiler.Range
 open Microsoft.CodeAnalysis.CSharp
 open Fantomas.FormatConfig
 open Fantomas
-open CsToFs
-open CsToFs.Core.TreeOps
+open FSharper.Core.TreeOps
 
 module FormatOuput = 
 
@@ -352,7 +351,7 @@ let run (input:string) =
     |> Seq.fold (visitor.ParseSyntax) None
     |> Option.map (fun x -> 
         match x with 
-        | CsToFs.Core.File f -> 
+        | File f -> 
             let mods = f.UsingStatements |> List.map FormatOuput.createOpenStatements 
             let ns = 
                 match f.Namespaces with 
@@ -366,15 +365,15 @@ let run (input:string) =
                     FormatOuput.toNamespace x (mods @ classes) )
             FormatOuput.toFile namespaces
 
-        | CsToFs.Core.UsingStatement us -> 
+        | UsingStatement us -> 
             let ns = {Name = "Namespace579084dc-3f6e-11e9-85bb-d721e145d6a1"; Interfaces = []; Classes = [] }           
             FormatOuput.toNamespace ns [FormatOuput.createOpenStatements us] |> List.singleton |> FormatOuput.toFile
         
                 //   |> List.singleton |> defaultModule |> toFile
-        | CsToFs.Core.Namespace ns -> FormatOuput.toNamespace ns [] |> List.singleton |> FormatOuput.toFile
-        | CsToFs.Core.Class cn ->  cn  |> FormatOuput.toClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
-        | CsToFs.Core.Method m ->  m |> FormatOuput.toMethod [m.Name] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
-        | CsToFs.Core.Field f ->  f |> Seq.head |> FormatOuput.inMethod |> FormatOuput.toMethod [] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
+        | Namespace ns -> FormatOuput.toNamespace ns [] |> List.singleton |> FormatOuput.toFile
+        | Class cn ->  cn  |> FormatOuput.toClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
+        | Method m ->  m |> FormatOuput.toMethod [m.Name] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
+        | FSharper.Core.Field f ->  f |> Seq.head |> FormatOuput.inMethod |> FormatOuput.toMethod [] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
         )
     |> Option.map(removeFhsarpIn FormatOuput.file)
     //|> Option.map (fun tree -> 

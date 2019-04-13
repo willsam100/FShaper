@@ -1,7 +1,7 @@
 namespace Tests
 
 open NUnit.Framework
-open CsToFs.Core
+open FSharper.Core
 open FsUnit
             
 [<TestClass>]

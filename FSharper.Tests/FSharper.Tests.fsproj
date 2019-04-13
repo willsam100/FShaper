@@ -19,6 +19,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\CsToFs.Core\CsToFs.Core.fsproj" />
+    <ProjectReference Include="..\FSharper.Core\FSharper.Core.fsproj" />
   </ItemGroup>
 </Project>

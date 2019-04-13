@@ -1,4 +1,4 @@
-﻿namespace CsToFs.Core
+﻿namespace FSharper.Core
 open Microsoft.FSharp.Compiler.Ast
 
 [<NoEquality; NoComparison;RequireQualifiedAccess>]

@@ -18,18 +18,14 @@
     <OtherFlags> --simpleresolution --nocopyfsharpcore</OtherFlags>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Remove="CsharpParser.fs" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="FSharp.Core" Version="4.5.4" />
-    <Compile Include="DomainTypes.fs" />
-    <Compile Include="CsharpParser.fs" />
-    <Compile Include="Translation.fs" />
-    <Compile Include="Converter.fs" />
     <Compile Include="Program.fs" />
-    <None Include="Script.fsx" />
-    <None Include="EmailSubscribersScript.fsx" />
-    <None Include="DomainPrinter.fs" />
     <None Include="fsc.props" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\CsToFs.Core\CsToFs.Core.fsproj" />
+    <ProjectReference Include="..\FSharper.Core\FSharper.Core.fsproj" />
   </ItemGroup>
 </Project>

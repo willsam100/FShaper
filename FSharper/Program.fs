@@ -1,7 +1,7 @@
 ﻿// Learn more about F# at http://fsharp.org
 open System
 open Fantomas
-open CsToFs.Core
+open FSharper.Core
 open Fantomas.FormatConfig
 open System.Text.RegularExpressions
     

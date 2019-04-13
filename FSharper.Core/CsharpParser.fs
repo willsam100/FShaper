@@ -1,4 +1,4 @@
-﻿namespace CsToFs.Core
+﻿namespace FSharper.Core
 
 open System
 open Microsoft.FSharp.Compiler.Ast
@@ -6,7 +6,6 @@ open Microsoft.CodeAnalysis
 open System.Linq
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis.CSharp.Syntax
-open CsToFs
 open Microsoft.FSharp.Compiler
 open Microsoft.FSharp.Compiler.Range
 
@@ -1044,7 +1043,7 @@ type FileContentsDumper() =
             | :? MethodDeclarationSyntax as x -> x |> this.VisitMethodDeclaration |> Method
             | :? InterfaceDeclarationSyntax as x -> x |> this.VisitInterfaceDeclaration |> Interface
             | :? ClassDeclarationSyntax as x -> x |> this.VisitClassDeclaration |> Class
-            | :? FieldDeclarationSyntax as x -> x |> this.VisitFieldDeclaration |> CsToFs.Core.Field
+            | :? FieldDeclarationSyntax as x -> x |> this.VisitFieldDeclaration |> FSharper.Core.Field
             | :? PropertyDeclarationSyntax as x -> x |> this.VisitPropertyDeclaration |> Prop
             | x -> printfn "Skipping element: %A" <| x.Kind(); Empty
 
@@ -1056,7 +1055,7 @@ type FileContentsDumper() =
             | File f, File _ -> failwith "Meging files, not implemented"
             | File f, Interface i -> failwith "Meging interface with file, not implemented"
             | File f, Class c -> failwith "Meging class with file, not implemented"
-            | File f, CsToFs.Core.Field field -> failwith "Meging files, not implemented"
+            | File f, FSharper.Core.Field field -> failwith "Meging files, not implemented"
             | File f, Prop p -> failwith "Meging files, not implemented"
             | File f, Method m -> failwith "Meging files, not implemented"
             | File f, Namespace ns -> 
@@ -1072,9 +1071,9 @@ type FileContentsDumper() =
                     UsingStatements = [i]
                     Namespaces = [ns]
                 } |> File |> Some
-            | CsToFs.Core.Field f, CsToFs.Core.Field fPrime -> 
+            | FSharper.Core.Field f, FSharper.Core.Field fPrime -> 
                 seq {
                     yield! f
                     yield! fPrime
-                } |> CsToFs.Core.Field |> Some
+                } |> FSharper.Core.Field |> Some
             | _, _ -> sprintf "C# not supported: %A, %A" tree result |> failwith
