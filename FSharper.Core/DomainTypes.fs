@@ -1,4 +1,9 @@
-﻿namespace FSharper.Core
+﻿// Represents and intermediate tree structure. 
+// This allows illegal F# syntax, but can be created direclty from C#
+// The tree is then re-written to be legal F# syntax, and translate to the F# AST. 
+// The tree also does not require some things, most importanlty a range - Fantomas is used to format the code
+
+namespace FSharper.Core
 open Microsoft.FSharp.Compiler.Ast
 
 [<NoEquality; NoComparison;RequireQualifiedAccess>]
@@ -253,28 +258,7 @@ and
     | Fixed of expr:Expr
 
     | InLetPlaceholder
-    
 
-//type Line = 
-    //| Line of string 
-    //| Expr of Expr
-
-//module Line = 
-
-    //let append (Line l) (s:string)  = 
-    //    l + s |> Line
-
-    //let prepend (s:string) (Line l) = 
-    //    s + l |> Line
-
-    //let join sep (Line l) (s:string) =
-    //    sprintf "%s%s%s" l sep s |> Line
-
-    //let concat sep lines = 
-        //lines 
-        //|> Seq.map (fun (Line l) -> l)
-        //|> String.concat sep
-        //|> Line
 
     | ReturnFromIf of Expr
 
@@ -386,27 +370,3 @@ type FsharpSyntax =
     | Prop of Prop
     | Method of Method
     | Empty
-
-
-
-//type Foo() = 
-    
-    //member this.HandleCaretPositionChanged(sender : obj, e : EventArgs) =
-        //if this.Editor.IsInAtomicUndo then ()
-        //else
-            //this.CancelQuickFixTimer()
-            //let mutable token = this.quickFixCancellationTokenSource.Token
-            //if this.AnalysisOptions.EnableFancyFeatures
-            //   && this.DocumentContext.ParsedDocument <> null then
-            //    if this.HasCurrentFixes then
-            //        let mutable curOffset = this.Editor.CaretOffset
-
-            //        for fix in this.smartTagTask.Result.CodeFixActions do
-            //            if !(!) then
-            //                this.RemoveWidget()
-            //                BreakStatement
-
-            //    smartTagTask <- GetCurrentFixesAsync(token)
-            //else this.RemoveWidget()
-
-

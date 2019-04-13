@@ -1,4 +1,5 @@
-﻿namespace FSharper.Core
+﻿// C# parser - this walks the CSharp syntax tree and creates the intermediate F# syntax tree
+namespace FSharper.Core
 
 open System
 open Microsoft.FSharp.Compiler.Ast
@@ -10,7 +11,7 @@ open Microsoft.FSharp.Compiler
 open Microsoft.FSharp.Compiler.Range
 
 [<AutoOpen>]
-module Parser = 
+module ParserUtil = 
     let toSingleIdent (s:string) = Ident(s, range0)
 
     let toIdent (s:string) = 
@@ -42,9 +43,6 @@ module Parser =
 
     let toPatId ident = 
         SynSimplePat.Id (Ident(ident, range0), None, false, true, false, range0)
-
-    //let patLongIdent (s:string) = 
-        //SynPat.Long
     
 
 [<AutoOpen>]
@@ -59,7 +57,7 @@ module SimpleFormatter =
         | Debug -> s |> toLongIdent
         | Release -> f () 
 
-type LineTransformer() = 
+type CSharpStatementWalker() = 
 
     static member ToCsharpSyntaxNode (node:SyntaxNode) =
         match node with
@@ -69,19 +67,12 @@ type LineTransformer() =
     static member ParseAssignmentExpressionSyntax (node:AssignmentExpressionSyntax): Expr = 
 
         match node.Kind() with
-        //| SyntaxKind.Assing -> 
 
         | SyntaxKind.SubtractAssignmentExpression -> 
             node.WithoutTrivia().ToFullString() |> Expr.Ident
 
         | SyntaxKind.SimpleAssignmentExpression -> 
-            //let left = 
-                //node.Left.ChildNodesAndTokens() 
-                //|> Seq.map LineTransformer.ParseNodeOrToken
-                //|> Seq.reduce (fun a b -> Expr.Sequential (SequencePointsAtSeq, true, a,b)) 
-
-            let right = node.Right |> LineTransformer.ParseExpression
-
+            let right = node.Right |> CSharpStatementWalker.ParseExpression
 
             let l = LongIdentWithDots (node.Left.WithoutTrivia().ToFullString() |> toIdent, [range0])
             Expr.LongIdentSet (l, right)
@@ -93,8 +84,8 @@ type LineTransformer() =
                 node.ChildTokens() |> Seq.exists (fun x -> x.Kind() = SyntaxKind.PlusEqualsToken)
 
             let left = 
-                node.Left |> LineTransformer.ParseChsarpNode
-            let right = node.Right |> LineTransformer.ParseChsarpNode
+                node.Left |> CSharpStatementWalker.ParseChsarpNode
+            let right = node.Right |> CSharpStatementWalker.ParseChsarpNode
 
             if isPlusEquals then 
                 //let mem =   |> toLongIdent, Expr.Const SynConst.Unit)
@@ -104,44 +95,8 @@ type LineTransformer() =
                 //let app = Expr.App (ExprAtomicFlag.Atomic, false, app, Expr.Const SynConst.Unit)
                 let app = Expr.TypeApp (app, [SynType.Anon range0])
 
-                let app = Expr.App (ExprAtomicFlag.Atomic, false, app, Expr.Paren right)
-
-
-                app
+                Expr.App (ExprAtomicFlag.Atomic, false, app, Expr.Paren right)
                 
-
-                        //.ChildNodes() 
-                        //|> Seq.filter (fun x -> x.Kind() = SyntaxKind.ParameterList) 
-                        //|> Seq.choose LineTransformer.ToCsharpSyntaxNode
-                        //|> Seq.map LineTransformer.ParseChsarpNode
-                        //|> Seq.last
-                        ////|> String.concat ""
-
-                    //let otherNodes = 
-                    //    node.Right.ChildNodes()
-                    //    |> Seq.filter (fun x -> x.Kind() <> SyntaxKind.ParameterList) 
-                    //    |> Seq.choose LineTransformer.ToCsharpSyntaxNode
-                    //    |> Seq.map LineTransformer.ParseChsarpNode
-                    //    |> sequential
-
-                    //[paramList; otherNodes] |> sequential
-                
-
-            
-                //.ChildNodesAndTokens() 
-                //|> Seq.map LineTransformer.ParseNodeOrToken
-                //|> sequential
-
-            // TODO is 
-            //if isPlusEquals then 
-
-            //    let (Line left) = left
-            //    let (Line right) = right
-            //    sprintf "%s.AddHandler(new EventHandler<_>(fun %s ))" left right |> Line
-            //else
-
-            //let (Line right) = right
-            //let (Line left) = left
             else
                 Expr.Set (left, right)
 
@@ -154,13 +109,13 @@ type LineTransformer() =
 
             let left = 
                 match node.Left with 
-                | :? BinaryExpressionSyntax as x -> LineTransformer.ParseBinaryExpresson x 
-                | _ -> LineTransformer.ParseChsarpNode node.Left
+                | :? BinaryExpressionSyntax as x -> CSharpStatementWalker.ParseBinaryExpresson x 
+                | _ -> CSharpStatementWalker.ParseChsarpNode node.Left
 
             let right = 
                 match node.Right with 
-                | :? BinaryExpressionSyntax as x -> LineTransformer.ParseBinaryExpresson x 
-                | _ -> LineTransformer.ParseChsarpNode node.Right
+                | :? BinaryExpressionSyntax as x -> CSharpStatementWalker.ParseBinaryExpresson x 
+                | _ -> CSharpStatementWalker.ParseChsarpNode node.Right
 
             Expr.App (ExprAtomicFlag.NonAtomic, false, 
                 Expr.App(ExprAtomicFlag.NonAtomic, true, Expr.Ident join, left), right) 
@@ -179,7 +134,7 @@ type LineTransformer() =
 
             let left = 
                 match node.Left with 
-                | _ -> LineTransformer.ParseChsarpNode node.Left
+                | _ -> CSharpStatementWalker.ParseChsarpNode node.Left
 
             let right = 
                 match node.Right with 
@@ -187,10 +142,6 @@ type LineTransformer() =
                 | x -> sprintf "Expected type identifier, but got: %A" x |> failwith
 
             Expr.Downcast (left, right)
-            
-        //| _ -> 
-            //printfn "Binary: %A" <| node.Kind();  
-            //node.ToFullString() |> Line
 
     static member ParseToken (node:SyntaxToken) = 
 
@@ -370,12 +321,12 @@ type LineTransformer() =
     static member ParseInterpolatedStringContentSyntax (node:InterpolatedStringContentSyntax) = 
         match node with 
         //| :? InterpolatedStringTextSyntax as x -> "-" + x.TextToken.Text |> Line
-        | :? InterpolationSyntax as x -> x.Expression |> LineTransformer.ParseChsarpNode
+        | :? InterpolationSyntax as x -> x.Expression |> CSharpStatementWalker.ParseChsarpNode
         //| x -> x.ToFullString() |> Line
 
     static member ParseStatementSyntax (node:StatementSyntax) = 
         match node with 
-        | :? BlockSyntax as x -> x.Statements  |> Seq.map LineTransformer.ParseStatementSyntax |> sequential
+        | :? BlockSyntax as x -> x.Statements  |> Seq.map CSharpStatementWalker.ParseStatementSyntax |> sequential
         | :? BreakStatementSyntax as x -> "BreakStatement" |> toLongIdent
         | :? CheckedStatementSyntax as x -> "CheckedStatement" |> toLongIdent
         | :? CommonForEachStatementSyntax as x -> 
@@ -383,13 +334,13 @@ type LineTransformer() =
             | :? ForEachStatementSyntax as x -> 
 
                 let var = Pat.Named (Pat.Wild, Ident(x.Identifier.ValueText, range0), false, None)
-                let exp = x.Expression |> LineTransformer.ParseChsarpNode
-                let body = x.Statement |> LineTransformer.ParseChsarpNode
+                let exp = x.Expression |> CSharpStatementWalker.ParseChsarpNode
+                let body = x.Statement |> CSharpStatementWalker.ParseChsarpNode
                 Expr.ForEach (SequencePointInfoForForLoop.SequencePointAtForLoop range0, SeqExprOnly.SeqExprOnly false, true, var, exp, body)
 
             | :? ForEachVariableStatementSyntax as x -> 
 
-                let v = x.Variable |> LineTransformer.ParseChsarpNode
+                let v = x.Variable |> CSharpStatementWalker.ParseChsarpNode
                 let var = 
                     let rec toPat v = 
                         match v with 
@@ -399,8 +350,8 @@ type LineTransformer() =
                         | _ -> failwith "Not valid for Pat"
                     toPat v
 
-                let exp = x.Expression |> LineTransformer.ParseChsarpNode
-                let body = x.Statement |> LineTransformer.ParseChsarpNode
+                let exp = x.Expression |> CSharpStatementWalker.ParseChsarpNode
+                let body = x.Statement |> CSharpStatementWalker.ParseChsarpNode
 
                 Expr.ForEach (SequencePointInfoForForLoop.SequencePointAtForLoop range0, SeqExprOnly.SeqExprOnly false, true, var, exp, body)
 
@@ -408,27 +359,27 @@ type LineTransformer() =
         | :? DoStatementSyntax as x -> "DoStatement" |> toLongIdent
         | :? EmptyStatementSyntax as x -> "EmptyStatement" |> toLongIdent
         | :? ExpressionStatementSyntax as x ->
-            x.Expression |> LineTransformer.ParseExpression
+            x.Expression |> CSharpStatementWalker.ParseExpression
         | :? FixedStatementSyntax as x -> "FixedStatement" |> toLongIdent
         | :? ForStatementSyntax as x -> "ForStatement" |> toLongIdent
         | :? GotoStatementSyntax as x -> "GotoStatement" |> toLongIdent
         | :? IfStatementSyntax as x ->
-            let condtion = LineTransformer.ParseChsarpNode x.Condition
-            let statement = LineTransformer.ParseChsarpNode x.Statement
-            let elseExpr = x.Else |>  Option.ofObj |> Option.map LineTransformer.ParseChsarpNode
+            let condtion = CSharpStatementWalker.ParseChsarpNode x.Condition
+            let statement = CSharpStatementWalker.ParseChsarpNode x.Statement
+            let elseExpr = x.Else |>  Option.ofObj |> Option.map CSharpStatementWalker.ParseChsarpNode
             printfn "elseExpr: %A" elseExpr
             Expr.IfThenElse (condtion, statement, elseExpr, SequencePointInfoForBinding.SequencePointAtBinding range0, false)
 
         | :? LabeledStatementSyntax as x -> "LabeledStatement" |> toLongIdent
         | :? LocalDeclarationStatementSyntax as x -> 
-            x.Declaration |> LineTransformer.ParseChsarpNode
+            x.Declaration |> CSharpStatementWalker.ParseChsarpNode
         | :? LocalFunctionStatementSyntax as x -> "LocalFunctionStatement" |> toLongIdent
         | :? LockStatementSyntax as x -> "LockStatement" |> toLongIdent
         | :? ReturnStatementSyntax as x -> 
             if x.Expression = null then 
                 Expr.Const SynConst.Unit
             else 
-                LineTransformer.ParseExpression x.Expression |> Expr.ReturnFromIf
+                CSharpStatementWalker.ParseExpression x.Expression |> Expr.ReturnFromIf
         | :? SwitchStatementSyntax as x -> "SwitchStatement" |> toLongIdent
         | :? ThrowStatementSyntax as x -> "ThrowStatement" |> toLongIdent
         | :? TryStatementSyntax as x -> "TryStatement" |> toLongIdent
@@ -441,8 +392,8 @@ type LineTransformer() =
                         None, SynBindingKind.NormalBinding, false, false, [], 
                         SynValData (None, SynValInfo ([], SynArgInfo ([], false, None )), None), 
                         Pat.Named (Pat.Wild, Ident("_", range0), false, None), 
-                        x.Expression |> LineTransformer.ParseChsarpNode)
-            let s = x.Statement |> LineTransformer.ParseChsarpNode
+                        x.Expression |> CSharpStatementWalker.ParseChsarpNode)
+            let s = x.Statement |> CSharpStatementWalker.ParseChsarpNode
 
             Expr.LetOrUse (false, true, [var], s)
 
@@ -461,21 +412,21 @@ type LineTransformer() =
         | :? AccessorDeclarationSyntax as x -> "AccessorDeclaration" |> toLongIdent
         | :? AccessorListSyntax as x -> "AccessorList" |> toLongIdent
         | :? AnonymousObjectMemberDeclaratorSyntax as x -> "AnonymousObjectMemberDeclarator" |> toLongIdent
-        | :? ArgumentSyntax as x -> x.Expression |> LineTransformer.ParseExpression
+        | :? ArgumentSyntax as x -> x.Expression |> CSharpStatementWalker.ParseExpression
         | :? ArrayRankSpecifierSyntax as x -> "ArrayRankSpecifier" |> toLongIdent
         | :? ArrowExpressionClauseSyntax as x -> "ArrowExpressionClause" |> toLongIdent
         | :? AttributeArgumentListSyntax as x -> 
             x.Arguments |> Seq.toList 
-            |> List.map (fun x -> LineTransformer.ParseChsarpNode (x, ?withSelfIdentifier = withSelfIdentifier))
+            |> List.map (fun x -> CSharpStatementWalker.ParseChsarpNode (x, ?withSelfIdentifier = withSelfIdentifier))
             |> Expr.Tuple 
             |> Expr.Paren
 
-        | :? AttributeArgumentSyntax as x -> LineTransformer.ParseExpression (x.Expression, ?withoutSelfIdentifier = withSelfIdentifier)
+        | :? AttributeArgumentSyntax as x -> CSharpStatementWalker.ParseExpression (x.Expression)
         | :? AttributeListSyntax as x -> "AttributeList" |> toLongIdent
         | :? AttributeSyntax as x -> "Attribute" |> toLongIdent
         | :? AttributeTargetSpecifierSyntax as x -> "AttributeTargetSpecifier" |> toLongIdent
         | :? BaseArgumentListSyntax as x -> 
-            x.Arguments |> Seq.map (fun x -> LineTransformer.ParseChsarpNode (x.Expression, ?withSelfIdentifier = withSelfIdentifier)) 
+            x.Arguments |> Seq.map (fun x -> CSharpStatementWalker.ParseChsarpNode (x.Expression, ?withSelfIdentifier = withSelfIdentifier)) 
             |> Seq.toList |> Expr.Tuple |> Expr.Paren
 
             //"BaseArgumentList" |> toLongIdent
@@ -492,10 +443,10 @@ type LineTransformer() =
         | :? CrefSyntax as x -> "Cref" |> toLongIdent
         | :? ElseClauseSyntax as x -> 
             printfn "ElseClause: %A" x.Statement
-            x.Statement |> LineTransformer.ParseStatementSyntax
-        | :? EqualsValueClauseSyntax as x -> x.Value |> LineTransformer.ParseExpression
+            x.Statement |> CSharpStatementWalker.ParseStatementSyntax
+        | :? EqualsValueClauseSyntax as x -> x.Value |> CSharpStatementWalker.ParseExpression
         | :? ExplicitInterfaceSpecifierSyntax as x -> "ExplicitInterfaceSpecifier" |> toLongIdent
-        | :? ExpressionSyntax as x -> LineTransformer.ParseExpression (x, ?withoutSelfIdentifier = withSelfIdentifier )
+        | :? ExpressionSyntax as x -> CSharpStatementWalker.ParseExpression (x)
         | :? ExternAliasDirectiveSyntax as x -> "ExternAliasDirective" |> toLongIdent
         | :? FinallyClauseSyntax as x -> "FinallyClause" |> toLongIdent
         | :? InterpolatedStringContentSyntax as x -> "InterpolatedStringContent" |> toLongIdent
@@ -512,21 +463,7 @@ type LineTransformer() =
         | :? QueryClauseSyntax as x -> "QueryClause" |> toLongIdent
         | :? QueryContinuationSyntax as x -> "QueryContinuation" |> toLongIdent
         | :? SelectOrGroupClauseSyntax as x -> "SelectOrGroupClause" |> toLongIdent
-        | :? StatementSyntax as x -> 
-            x |> LineTransformer.ParseStatementSyntax
-            //match 
-            //    node.ChildNodes() 
-            //    |> Seq.choose LineTransformer.ToCsharpSyntaxNode 
-            //    |> Seq.map LineTransformer.ParseChsarpNode
-            //    |> Seq.toList with 
-            //| _::_::_ as xs -> 
-            //    xs |> sequential
-            //| x::[] -> x
-            //| _ -> 
-                //node.ChildTokens() 
-                //|> Seq.map LineTransformer.ParseToken
-                //|> Seq.toList 
-                //|> sequential
+        | :? StatementSyntax as x -> x |> CSharpStatementWalker.ParseStatementSyntax
         | :? StructuredTriviaSyntax as x -> "StructuredTrivia" |> toLongIdent
         | :? SwitchLabelSyntax as x -> "SwitchLabel" |> toLongIdent
         | :? SwitchSectionSyntax as x -> "SwitchSection" |> toLongIdent
@@ -541,29 +478,17 @@ type LineTransformer() =
             //x.Name
              //"UsingDirective" |> toLongIdent
         | :? VariableDeclarationSyntax as x -> 
-     
-            //x.TypeSyntax
+
             x.Variables 
-            |> Seq.map LineTransformer.ParseChsarpNode 
+            |> Seq.map CSharpStatementWalker.ParseChsarpNode 
             |> sequential
-            
-            //x.WithoutTrivia().ToFullString().Replace("var", "let") |> toLongIdent
         | :? VariableDeclaratorSyntax as x -> 
 
-            let init = x.Initializer |> LineTransformer.ParseChsarpNode
-            
-            //Expr.Ident <| x.WithoutTrivia().ToFullString() // |> toIdent
+            let init = x.Initializer |> CSharpStatementWalker.ParseChsarpNode
             Expr.LetOrUse(
                 false, false, 
                 [LetBind(None, SynBindingKind.NormalBinding, false, true, [],
                     SynValData (
-                        //Some {
-                        //    MemberFlags.IsInstance = true
-                        //    MemberFlags.IsDispatchSlot = false 
-                        //    MemberFlags.IsOverrideOrExplicitImpl = false 
-                        //    MemberFlags.IsFinal = false
-                        //    MemberFlags.MemberKind = MemberKind.Member
-                        //}
                         None, SynValInfo ([], SynArgInfo ([], false, None )), None), 
                     Pat.Named (Pat.Wild, Ident(x.Identifier.ValueText, range0), false, None), init)], Expr.InLetPlaceholder)
 
@@ -576,37 +501,18 @@ type LineTransformer() =
         | :? XmlNodeSyntax as x -> "XmlNode" |> toLongIdent
         | :? XmlPrefixSyntax as x -> "XmlPrefix" |> toLongIdent
 
-        //| x -> 
-            //x.WithoutTrivia().ToFullString() |> Expr.Ident 
-            ////printfn "CSharpSyntaxNode"
-            ////x |> printfn "%A"
-            ////x.GetType() |> printfn "%A"
-            ////x.Kind() |> printfn "%A"
-            ////printfn "--\n"
-
-            //x.WithoutTrivia().ToFullString() |> Line
-
-    static member ParseExpression (node:ExpressionSyntax, ?withoutSelfIdentifier) = 
+    static member ParseExpression (node:ExpressionSyntax) = 
 
         if node = null then  printfn "Node was null"; Expr.Const SynConst.Unit else
 
-        printfn "%A %A, %A" node withoutSelfIdentifier (node.GetType())
-        let format =            
-            match withoutSelfIdentifier with 
-            | Some x when x  -> id
-            | _ -> id
-                //(fun (x:string) -> 
-                    //if x.Length >= 1 && Char.IsLower x.[0] then x 
-                    //else sprintf "this.%s" x)
-
         match node with
-        | :? IdentifierNameSyntax as x -> LineTransformer.ParseChsarpNode x
+        | :? IdentifierNameSyntax as x -> CSharpStatementWalker.ParseChsarpNode x
         | :? AnonymousFunctionExpressionSyntax as x -> 
             match x with 
             | :? LambdaExpressionSyntax as x -> 
                 match x with 
                 | :? SimpleLambdaExpressionSyntax as x -> 
-                    let b = x.Body |> LineTransformer.ParseChsarpNode
+                    let b = x.Body |> CSharpStatementWalker.ParseChsarpNode
                     let n = 
                         SynSimplePats.SimplePats ([
                             SynSimplePat.Id 
@@ -625,7 +531,7 @@ type LineTransformer() =
                                 |> Seq.toList
                         SynSimplePats.SimplePats (idents, range0)
 
-                    let body = x.Body |> LineTransformer.ParseChsarpNode
+                    let body = x.Body |> CSharpStatementWalker.ParseChsarpNode
                     Expr.Lambda (true, false, args, body)
 
             | :? AnonymousMethodExpressionSyntax as x -> 
@@ -639,18 +545,18 @@ type LineTransformer() =
                             |> Seq.toList
                     SynSimplePats.SimplePats (idents, range0)
 
-                let body = x.Body |> LineTransformer.ParseChsarpNode
+                let body = x.Body |> CSharpStatementWalker.ParseChsarpNode
                 Expr.Lambda (true, false, args, body)
                 
 
         | :? AnonymousObjectCreationExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "AnonymousObjectCreationExpressionSyntax"
         | :? ArrayCreationExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "ArrayCreationExpressionSyntax"
-        | :? AssignmentExpressionSyntax as x -> x |> LineTransformer.ParseAssignmentExpressionSyntax
+        | :? AssignmentExpressionSyntax as x -> x |> CSharpStatementWalker.ParseAssignmentExpressionSyntax
         | :? AwaitExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "AwaitExpressionSyntax"
-        | :? BinaryExpressionSyntax as x -> x |> LineTransformer.ParseBinaryExpresson
+        | :? BinaryExpressionSyntax as x -> x |> CSharpStatementWalker.ParseBinaryExpresson
         | :? CastExpressionSyntax as x -> 
             printfn "CastExpressionSyntax: %b" (x.Expression = null)
-            let exp = LineTransformer.ParseExpression x.Expression
+            let exp = CSharpStatementWalker.ParseExpression x.Expression
             let castType = x.Type.WithoutTrivia().ToFullString() |> toLongIdentWithDots
             Expr.Downcast (exp, SynType.LongIdent castType)
 
@@ -664,7 +570,7 @@ type LineTransformer() =
         | :? ElementBindingExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "ElementBindingExpressionSyntax"
         | :? ImplicitArrayCreationExpressionSyntax as x -> 
             printfn "ImplicitArrayCreationExpressionSyntax: %b" (x.Initializer = null)
-            let init = LineTransformer.ParseExpression (x.Initializer, false)
+            let init = CSharpStatementWalker.ParseExpression (x.Initializer)
             let isNakedRef = ref true
             Expr.ArrayOrListOfSeqExpr (true, Expr.CompExpr (true, isNakedRef, init))
             
@@ -674,7 +580,7 @@ type LineTransformer() =
 
             x.Expressions
             |> Seq.map (fun x -> printfn "InitializerExpressionSyntax: %b" (x = null); x)
-            |> Seq.map (LineTransformer.ParseExpression >> (fun x -> 
+            |> Seq.map (CSharpStatementWalker.ParseExpression >> (fun x -> 
                 match x with 
                 | Expr.LongIdentSet (LongIdentWithDots ([ident], _), value) -> 
                     Expr.App (ExprAtomicFlag.NonAtomic, false, 
@@ -690,40 +596,28 @@ type LineTransformer() =
         
             let args =  
                 x.ArgumentList.Arguments 
-                |> Seq.map (fun x -> LineTransformer.ParseChsarpNode x )
+                |> Seq.map (fun x -> CSharpStatementWalker.ParseChsarpNode x )
                 |> Seq.toList
                 |> Expr.Tuple 
 
             printfn "InvocationExpressionSyntax: %A" args
             printfn "Expression: %A, %A" x.Expression (x.Expression.GetType())
 
-            let name = x.Expression |> LineTransformer.ParseChsarpNode
+            let name = x.Expression |> CSharpStatementWalker.ParseChsarpNode
             printfn "Nmae: %A" name
             printfn ""
             Expr.App (ExprAtomicFlag.NonAtomic, false, name, Expr.Paren args)
 
         //| :? IsPatternExpressionSyntax as x -> ()
         | :? LiteralExpressionSyntax as x -> 
-            x.Token |> LineTransformer.ParseToken
+            x.Token |> CSharpStatementWalker.ParseToken
         //| :? MakeRefExpressionSyntax as x -> ()
         | :? MemberAccessExpressionSyntax as x ->
 
             //x.Name
             match x.OperatorToken.Text with 
-            | "." -> Expr.DotGet(x.Expression |> LineTransformer.ParseExpression, x.Name.WithoutTrivia().ToFullString() |> toLongIdentWithDots)
-            
-            
+            | "." -> Expr.DotGet(x.Expression |> CSharpStatementWalker.ParseExpression, x.Name.WithoutTrivia().ToFullString() |> toLongIdentWithDots)
 
-
-
-            //x.WithoutTrivia().ToFullString() |> format |> toLongIdent
-
-            //let root = x.Expression |> LineTransformer.ParseChsarpNode |> mapLongIdent (fun x -> sprintf "this.%s" x)
-            //let arg = x.Name.Identifier.ValueText |> toLongIdent
-
-            //Expr.App (ExprAtomicFlag.Atomic, false, root, arg)
-
-         //x.WithoutTrivia().ToFullString() |> toLongIdent
         | :? MemberBindingExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "MemberBindingExpressionSyntax"
         | :? ObjectCreationExpressionSyntax as x -> 
 
@@ -733,7 +627,7 @@ type LineTransformer() =
             let init = 
                 match x.Initializer with
                 | null ->  Expr.Const SynConst.Unit
-                | initExp ->  LineTransformer.ParseExpression (initExp, true)
+                | initExp ->  CSharpStatementWalker.ParseExpression (initExp)
 
             let joinArgs xs = 
                 match xs, init with 
@@ -744,7 +638,7 @@ type LineTransformer() =
             let args = 
                 match x.ArgumentList with 
                 | null -> Expr.Const SynConst.Unit
-                | x -> LineTransformer.ParseChsarpNode (x, true)
+                | x -> CSharpStatementWalker.ParseChsarpNode (x, true)
 
             let args = 
                 match args with
@@ -759,7 +653,7 @@ type LineTransformer() =
         | :? PrefixUnaryExpressionSyntax as x -> 
             match x.Kind() with 
             | SyntaxKind.LogicalNotExpression -> 
-                Expr.App(ExprAtomicFlag.NonAtomic, false, PrettyNaming.CompileOpName "not" |> Expr.Ident, x.Operand |> LineTransformer.ParseExpression)
+                Expr.App(ExprAtomicFlag.NonAtomic, false, PrettyNaming.CompileOpName "not" |> Expr.Ident, x.Operand |> CSharpStatementWalker.ParseExpression)
 
                 //x.ToFullString().Replace("!", "not ") |> Line
             | _ -> sprintf "Unkown C# token: %s" (x.WithoutTrivia().ToFullString()) |> failwith
@@ -782,18 +676,18 @@ type LineTransformer() =
     static member ParseNodeOrToken(node:SyntaxNodeOrToken): Expr = 
 
         if node.IsToken then 
-            node.AsToken() |> LineTransformer.ParseToken
+            node.AsToken() |> CSharpStatementWalker.ParseToken
         else 
             node.AsNode() 
-            |> LineTransformer.ToCsharpSyntaxNode
-            |> Option.map (fun x -> LineTransformer.ParseChsarpNode x)
+            |> CSharpStatementWalker.ToCsharpSyntaxNode
+            |> Option.map (fun x -> CSharpStatementWalker.ParseChsarpNode x)
             |> function 
                 | Some x -> x
                 | None -> failwith "VB is not supported"
     
 
 
-type FileContentsDumper() = 
+type FSharperTreeBuilder() = 
     inherit CSharpSyntaxWalker(SyntaxWalkerDepth.Token)
     
     member this.VisitNamespaceDeclaration (node:NamespaceDeclarationSyntax ) = 
@@ -840,11 +734,11 @@ type FileContentsDumper() =
                         |> Seq.map (fun y -> 
 
                             if isNull y.NameEquals then 
-                                LineTransformer.ParseChsarpNode (y.Expression, false) |>  AttributeValue
+                                CSharpStatementWalker.ParseChsarpNode (y.Expression, false) |>  AttributeValue
                             else 
                                 NamedAttributeValue 
-                                    (LineTransformer.ParseChsarpNode (y.NameEquals.Name, false), 
-                                    LineTransformer.ParseChsarpNode (y.Expression, false)) )
+                                    (CSharpStatementWalker.ParseChsarpNode (y.NameEquals.Name, false), 
+                                    CSharpStatementWalker.ParseChsarpNode (y.Expression, false)) )
                         |> Seq.toList
                         
                     {
@@ -951,7 +845,7 @@ type FileContentsDumper() =
             Method.Body =
                 node.Body |> Option.ofObj |> Option.map (fun x -> 
                     x.Statements 
-                    |> Seq.map LineTransformer.ParseChsarpNode
+                    |> Seq.map CSharpStatementWalker.ParseChsarpNode
                     |> sequential  )
                 |> function 
                 | Some x -> x
@@ -965,7 +859,7 @@ type FileContentsDumper() =
                     let args = 
                         match x.ArgumentList with 
                         | null -> None
-                        | x -> LineTransformer.ParseChsarpNode (x, true) |> Some 
+                        | x -> CSharpStatementWalker.ParseChsarpNode (x, true) |> Some 
 
                     name, args ))
                 |> Seq.concat
@@ -983,7 +877,7 @@ type FileContentsDumper() =
                 Field.Name =  x.Identifier.WithoutTrivia().ToFullString()
                 Field.Type = node.Declaration.Type.WithoutTrivia().ToFullString()
                 Field.IsPublic = isPublic
-                Field.Initilizer = x.Initializer |> Option.ofObj |> Option.map (fun x -> x.Value |> LineTransformer.ParseExpression )
+                Field.Initilizer = x.Initializer |> Option.ofObj |> Option.map (fun x -> x.Value |> CSharpStatementWalker.ParseExpression )
                 Field.IsConst = isConstant
             })
 
@@ -996,9 +890,9 @@ type FileContentsDumper() =
 
             match expression, statement with 
             | None, None -> []
-            | Some e, None -> [LineTransformer.ParseChsarpNode e]
-            | None, Some s -> s.Statements |> Seq.map LineTransformer.ParseChsarpNode |> Seq.toList
-            | Some e, Some s -> [LineTransformer.ParseChsarpNode e;] @ (s.Statements |> Seq.map LineTransformer.ParseChsarpNode |> Seq.toList)
+            | Some e, None -> [CSharpStatementWalker.ParseChsarpNode e]
+            | None, Some s -> s.Statements |> Seq.map CSharpStatementWalker.ParseChsarpNode |> Seq.toList
+            | Some e, Some s -> [CSharpStatementWalker.ParseChsarpNode e;] @ (s.Statements |> Seq.map CSharpStatementWalker.ParseChsarpNode |> Seq.toList)
 
         let processAccessorForAccessorType accessor = 
             node.AccessorList.Accessors 

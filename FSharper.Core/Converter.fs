@@ -99,13 +99,13 @@ module FormatOuput =
                         MemberFlags.IsOverrideOrExplicitImpl = false 
                         MemberFlags.IsFinal = false
                         MemberFlags.MemberKind = MemberKind.Member
-                    }, SynValInfo (argInfos, SynArgInfo ([], false, None)), None), // valData:SynValData *
+                    }, SynValInfo (argInfos, SynArgInfo ([], false, None)), None),
                 SynPat.LongIdent
                     (methodName, None, None, 
-                    Pats [namedArgs], None, range0 ), // headPat:SynPat *
-                None, // (SynType.LongIdent (toIdent "return", range0,[]) ), // returnInfo:SynBindingReturnInfo option *
-                trandformedTree |> toSynExpr, //|> addNewLineToLet file |> snd,
-                range0, //range:range *
+                    Pats [namedArgs], None, range0 ), 
+                None, 
+                trandformedTree |> toSynExpr,
+                range0, 
                 NoSequencePointAtInvisibleBinding
             ), range0)
 
@@ -221,7 +221,7 @@ module FormatOuput =
         let binding = 
             SynBinding.Binding (None, SynBindingKind.NormalBinding, false, not x.IsConst, [], PreXmlDocEmpty, 
                 SynValData (
-                    None, SynValInfo ([], SynArgInfo ([], false, Ident (x.Name, range0) |> Some )), None), // valData:SynValData *
+                    None, SynValInfo ([], SynArgInfo ([], false, Ident (x.Name, range0) |> Some )), None), 
                 SynPat.LongIdent
                     (LongIdentWithDots (toIdent x.Name, [range0]), None, None, 
                     Pats ([]), None, range0 ), None, 
@@ -258,7 +258,6 @@ module FormatOuput =
                 {
                     SynAttribute.TypeName = LongIdentWithDots (toIdent x.Name, [range0])
                     SynAttribute.ArgExpr = arg
-                    // SynExpr.Paren(SynExpr.Const SynConst.Char ',', range0, range0) 
                     SynAttribute.AppliesToGetterAndSetter = false
                     SynAttribute.Range = range0
                     SynAttribute.Target = None
@@ -319,7 +318,73 @@ module FormatOuput =
         |> List.singleton
         |> (fun x -> SynModuleDecl.Types (x, range0))
 
+let toFsharpSynaxTree input = 
+    match input with 
+    | File f -> 
+        let mods = f.UsingStatements |> List.map FormatOuput.createOpenStatements 
+        let ns = 
+            match f.Namespaces with 
+            | [] -> [{Name = "Namespace579084dc-3f6e-11e9-85bb-d721e145d6a1"; Interfaces = []; Classes = [] }]
+            | xs -> xs 
+
+        let namespaces = 
+            ns |> List.map (fun x -> 
+                let classes = 
+                    x.Classes |> List.map FormatOuput.toClass
+                FormatOuput.toNamespace x (mods @ classes) )
+        FormatOuput.toFile namespaces
+
+    | UsingStatement us -> 
+        let ns = {Name = "Namespace579084dc-3f6e-11e9-85bb-d721e145d6a1"; Interfaces = []; Classes = [] }           
+        FormatOuput.toNamespace ns [FormatOuput.createOpenStatements us] |> List.singleton |> FormatOuput.toFile
+
+    | Namespace ns -> FormatOuput.toNamespace ns [] |> List.singleton |> FormatOuput.toFile
+    | Class cn ->  cn  |> FormatOuput.toClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
+    | Method m ->  m |> FormatOuput.toMethod [m.Name] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
+    | FSharper.Core.Field f ->  f |> Seq.head |> FormatOuput.inMethod |> FormatOuput.toMethod [] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
+
+// One of th goals of this project is to support converting non-complete C# ie that from a blog post. 
+// To compile the code, scaffolding must be added ie a namespace, class etc. 
+// the output should match the input; this removes the scaffolding.
+let removeDefaultScaffolding (fsharpOutput:string) = 
+    fsharpOutput
+    |> (fun x -> x.Replace("namespace ``Namespace579084dc-3f6e-11e9-85bb-d721e145d6a1``\n", ""))
+    |> (fun x -> x.Replace("type ``Klass067803f4-3f6e-11e9-b4df-6f8305ceb4a6``() =\n", ""))
+    |> (fun x -> x.Replace("module ``Program35949ae4-3f6e-11e9-b4dc-230deb73e77f``\n\n", ""))
+    |> (fun x -> x.Replace("\"Program35949ae4-3f6e-11e9-b4dc-230deb73e77f\"\n", ""))
+    |> (fun x -> x.Replace("member this.Method156143763f6e11e984e11f16c4cfd728() =\n", ""))
+
+
+let toFsharpString config parseInput = 
+    if CodeFormatter.IsValidAST parseInput then
+
+        let tree = CodeFormatter.FormatAST(parseInput, FormatOuput.file, None, config) 
+
+        tree
+        |> removeDefaultScaffolding
+        |> (fun x -> 
+            let newLines = x.ToCharArray() |> Array.filter (fun x -> x ='\n') |> Array.length
+            if newLines >= 2 && (x.Contains "type" || x.Contains "module") then x 
+            else 
+                let reduceIndent (x:string) = 
+                    if x.StartsWith "    " then x.Substring 4 else x                        
+
+                x.Split '\n' |> Array.map reduceIndent |> String.concat "\n" )
+    else  "Bad F# syntax tree" 
+
+
 let run (input:string) = 
+
+    let config = 
+            {
+                FormatConfig.Default with 
+                    FormatConfig.SemicolonAtEndOfLine = false
+                    FormatConfig.StrictMode = true
+                    FormatConfig.PageWidth = 120
+                    FormatConfig.SpaceAfterComma = true
+                    FormatConfig.SpaceBeforeArgument = true
+                    FormatConfig.SpaceBeforeColon = false
+            }
 
     let tree = 
         input
@@ -343,86 +408,14 @@ let run (input:string) =
                     exit 1
         )
 
-    let visitor = new FileContentsDumper()
+    let visitor = new FSharperTreeBuilder()
     let indent = " " |> List.replicate 4 |> String.concat ""
 
-    let t = tree.GetRoot()
-    t.ChildNodes()
+    tree.GetRoot().ChildNodes()
     |> Seq.fold (visitor.ParseSyntax) None
-    |> Option.map (fun x -> 
-        match x with 
-        | File f -> 
-            let mods = f.UsingStatements |> List.map FormatOuput.createOpenStatements 
-            let ns = 
-                match f.Namespaces with 
-                | [] -> [{Name = "Namespace579084dc-3f6e-11e9-85bb-d721e145d6a1"; Interfaces = []; Classes = [] }]
-                | xs -> xs 
-
-            let namespaces = 
-                ns |> List.map (fun x -> 
-                    let classes = 
-                        x.Classes |> List.map FormatOuput.toClass
-                    FormatOuput.toNamespace x (mods @ classes) )
-            FormatOuput.toFile namespaces
-
-        | UsingStatement us -> 
-            let ns = {Name = "Namespace579084dc-3f6e-11e9-85bb-d721e145d6a1"; Interfaces = []; Classes = [] }           
-            FormatOuput.toNamespace ns [FormatOuput.createOpenStatements us] |> List.singleton |> FormatOuput.toFile
-        
-                //   |> List.singleton |> defaultModule |> toFile
-        | Namespace ns -> FormatOuput.toNamespace ns [] |> List.singleton |> FormatOuput.toFile
-        | Class cn ->  cn  |> FormatOuput.toClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
-        | Method m ->  m |> FormatOuput.toMethod [m.Name] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
-        | FSharper.Core.Field f ->  f |> Seq.head |> FormatOuput.inMethod |> FormatOuput.toMethod [] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
-        )
+    |> Option.map toFsharpSynaxTree 
     |> Option.map(removeFhsarpIn FormatOuput.file)
-    //|> Option.map (fun tree -> 
-    //    let config = 
-    //        {
-    //            FormatConfig.Default with FormatConfig.PageWidth = 1000
-    //        }
-
-    //    let x = CodeFormatter.FormatAST(tree, file, None, FormatConfig.Default) 
-    //    printfn "%s" x
-    //    x)
-    //|> Option.map(fun fsharpSource -> 
-        //let tree = getUntypedTree(file, fsharpSource)
-        //removeFhsarpIn file tree)
-    |> Option.map (fun tree -> 
-        printfn "------------------------------------------------------------"
-        printfn "%A" tree
-        printfn "------------------------------------------------------------"
-
-        let config = 
-            {
-                FormatConfig.Default with 
-                    FormatConfig.SemicolonAtEndOfLine = false
-                    FormatConfig.StrictMode = true
-                    FormatConfig.PageWidth = 120
-                    FormatConfig.SpaceAfterComma = true
-                    FormatConfig.SpaceBeforeArgument = true
-                    FormatConfig.SpaceBeforeColon = false
-            }
-
-        if CodeFormatter.IsValidAST tree then
-
-            let tree = CodeFormatter.FormatAST(tree, FormatOuput.file, None, config) 
-
-            tree
-            |> (fun x -> x.Replace("namespace ``Namespace579084dc-3f6e-11e9-85bb-d721e145d6a1``\n", ""))
-            |> (fun x -> x.Replace("type ``Klass067803f4-3f6e-11e9-b4df-6f8305ceb4a6``() =\n", ""))
-            |> (fun x -> x.Replace("module ``Program35949ae4-3f6e-11e9-b4dc-230deb73e77f``\n\n", ""))
-            |> (fun x -> x.Replace("\"Program35949ae4-3f6e-11e9-b4dc-230deb73e77f\"\n", ""))
-            |> (fun x -> x.Replace("member this.Method156143763f6e11e984e11f16c4cfd728() =\n", ""))
-            |> (fun x -> 
-                let newLines = x.ToCharArray() |> Array.filter (fun x -> x ='\n') |> Array.length
-                if newLines >= 2 && (x.Contains "type" || x.Contains "module") then x 
-                else 
-                    let reduceIndent (x:string) = 
-                        if x.StartsWith "    " then x.Substring 4 else x                        
-                        
-                    x.Split '\n' |> Array.map reduceIndent |> String.concat "\n" )
-        else  "Bad F# syntax tree" ) 
+    |> Option.map (toFsharpString config) 
     |> function 
     | Some x -> x.Trim()
     | None -> "Invalid C# syntax tree"

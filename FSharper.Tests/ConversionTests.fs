@@ -19,7 +19,7 @@ type TestClass () =
         
 
     [<Test>]
-    member this.``Can convert proptery and auto property`` () = 
+    member this.``Can convert property and auto property`` () = 
         let csharp = 
              """using MvvmCross.Forms.Views;
                 using TipCalc.Core.ViewModels;
@@ -170,7 +170,7 @@ type TestClass () =
                 [<Service(); IntentFilter([| "com.google.firebase.INSTANCE_ID_EVENT" |])>]
                 type MyFirebaseIIDService() =
                     inherit FirebaseInstanceIdService()
-                    let mutable TAG = "MyFirebaseIIDService"
+                    let TAG = "MyFirebaseIIDService"
 
                     member this.OnTokenRefresh() =
                         let mutable refreshedToken = FirebaseInstanceId.Instance.Token
@@ -262,11 +262,11 @@ type TestClass () =
 
         let fsharp = 
              """member this.Foo() =
-                if x then
-                    SomeAction()
-                    0
-                else f"""
-                   
+                    if x then
+                        SomeAction()
+                        0
+                    else f"""
+                       
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
@@ -328,6 +328,7 @@ type TestClass () =
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
 
+    // TODO: this test sis currently failing. 
     //[<Test>]
     //member this.``convert continue and foreach loop`` () = 
         //let csharp = 

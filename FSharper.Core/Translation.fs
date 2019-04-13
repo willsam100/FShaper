@@ -138,11 +138,6 @@ module TreeOps =
             | Expr.App (a,b,c,d) -> Expr.App (a,b, removeReturn c, removeReturn d)
             | e -> e
 
-        //if () 
-        //    return 
-
-        //foo () 
-
         let rec walker tree = 
             match tree with 
             | Expr.Sequential (s1,s2,s3,s4) -> 
@@ -161,21 +156,6 @@ module TreeOps =
                 let b = walker b
                 let c = c |> Option.map walker
                 Expr.IfThenElse (a,b,c,d,e)
-
-
-                //match isReturnFrom b, c |> Option.map isReturnFrom, c with 
-                //| true, Some false, _ -> Expr.IfThenElse (a,b,c,d,e)
-                //| true, Some true, Some x -> Expr.IfThenElse (a,b,c,d,e)
-                
-                //    let second = Expr.App (ExprAtomicFlag.NonAtomic,false,b,x)
-                //    Expr.IfThenElse (a,b,Some second,d,e)
-
-                //| false, Some true, Some x -> 
-                
-                //    let second = Expr.App (ExprAtomicFlag.NonAtomic,false,b,x)
-                //    Expr.IfThenElse (a,b,Some second,d,e)
-
-                //| false, Some false, _ -> Expr.IfThenElse (a,b,c,d,e)
 
             | Expr.App (a,b,c,d) -> 
 
@@ -424,8 +404,11 @@ module TreeOps =
             SynExpr.LetOrUse (a,b,c, d, e)
         | _ -> tree
 
-    let removeFhsarpIn file tree = // file fsharpSource = 
-        //let tree = getUntypedTree(file, fsharpSource)
+    // For some reason fantomas does not format let bindings correclty and wants to use the let .... in statements. 
+    // This is done becuase there are not line endings. 
+    // To correclty the problem, walk the tree and bump the line number, via the range, to add a new line. 
+    // Fantomas will then print the let binding with out the in keyword, and instead, move to the next line. 
+    let removeFhsarpIn file tree =
 
         match tree with
         | ParsedInput.ImplFile(implFile) ->
