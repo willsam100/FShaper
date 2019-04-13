@@ -79,7 +79,7 @@ module TreeOps =
         //| Assert of expr:Expr
 
         | Expr.App (a,b,c,d) -> SynExpr.App (a,b, toSynExpr c, toSynExpr d, range0)
-        | Expr.TypeApp (a,b) -> SynExpr.TypeApp (toSynExpr a, range0, b, [range0], None, range0,range0)
+        | Expr.TypeApp (a,b) -> SynExpr.TypeApp (toSynExpr a, range0, b, [], None, range0, range0)
 
         | Expr.LetOrUse (a,b,c,d) -> // of isRecursive:bool * isUse:bool * bindings:SynBinding list * body:Expr
             
@@ -287,6 +287,12 @@ module TreeOps =
         | Expr.LetOrUse (x,y,z,i) when isLetPlaceholder i |> not && y = true ->  
             Expr.LetOrUse (x,y,z,rewriteInLetExp i)
 
+
+        // This will occur when 'invalid' C# is written. ie a value is assinged to a var, but the var is not used.
+        // assume return type of unit.
+        | Expr.LetOrUse (x,y,z,i) when isLetPlaceholder i ->  
+            Expr.LetOrUse (x,y,z, Expr.Const SynConst.Unit)
+
         | Expr.Sequential (s1,s2,s3,s4) -> 
             match s3 with  
             | Expr.LetOrUse (x,y,z,i) when isLetPlaceholder i -> 
@@ -315,6 +321,11 @@ module TreeOps =
             let f2 = rewriteInLetExp f
 
             Expr.ForEach (a,b,c,d, e2, f2)
+
+        | Expr.Lambda (a,b,c,d) -> 
+            Expr.Lambda (a,b,c, rewriteInLetExp d)
+
+        | Expr.Paren e -> Expr.Paren (rewriteInLetExp e)
 
         | _ -> tree
 

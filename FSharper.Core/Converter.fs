@@ -29,7 +29,7 @@ module FormatOuput =
             | None -> Expr.Const SynConst.Unit
 
         let var = 
-            CsToFsBinding.LetBind 
+            FSharpBinding.LetBind 
                 (
                     None, SynBindingKind.NormalBinding, false, not x.IsConst, [], 
                     SynValData (None, SynValInfo ([], SynArgInfo ([], false, None )), None), 
@@ -88,6 +88,8 @@ module FormatOuput =
             |> rewriteInLetExp 
             |> wrapNewKeyword
             |> rewriteMethodWithPrefix methodNames
+        printfn "Transformed Tree:"
+        printfn "%A" trandformedTree
 
         SynMemberDefn.Member 
             (SynBinding.Binding ( x.Accessibility, SynBindingKind.NormalBinding, false, false, attributres,
@@ -364,7 +366,7 @@ let toFsharpString config parseInput =
         |> removeDefaultScaffolding
         |> (fun x -> 
             let newLines = x.ToCharArray() |> Array.filter (fun x -> x ='\n') |> Array.length
-            if newLines >= 2 && (x.Contains "type" || x.Contains "module") then x 
+            if newLines >= 2 && (x.Contains "type " || x.Contains "module") then x 
             else 
                 let reduceIndent (x:string) = 
                     if x.StartsWith "    " then x.Substring 4 else x                        
@@ -409,7 +411,6 @@ let run (input:string) =
         )
 
     let visitor = new FSharperTreeBuilder()
-    let indent = " " |> List.replicate 4 |> String.concat ""
 
     tree.GetRoot().ChildNodes()
     |> Seq.fold (visitor.ParseSyntax) None

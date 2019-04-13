@@ -39,7 +39,7 @@ type Pat =
     | FromParseError of SynPat
 and 
     [<NoEquality;NoComparison>]
-    CsToFsBinding  = 
+    FSharpBinding  = 
     | LetBind of 
         accessibility:SynAccess option *
         kind:SynBindingKind *
@@ -138,7 +138,7 @@ and
     /// F# syntax: let f pat1 .. patN = expr in expr
     /// F# syntax: let rec f pat1 .. patN = expr in expr
     /// F# syntax: use pat = expr in expr
-    | LetOrUse of isRecursive:bool * isUse:bool * bindings:CsToFsBinding list * body:Expr
+    | LetOrUse of isRecursive:bool * isUse:bool * bindings:FSharpBinding list * body:Expr
 
     /// F# syntax: try expr with pat -> expr
     | TryWith of tryExpr:Expr * withCases:SynMatchClause list * trySeqPoint:SequencePointInfoForTry * withSeqPoint:SequencePointInfoForWith

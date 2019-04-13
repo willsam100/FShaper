@@ -7,7 +7,11 @@ open FsUnit
 [<TestClass>]
 type TestClass () =
 
-    let formatFsharp (s:string) = s.Replace("                ", "").Replace("\n    \n", "\n\n").Replace("\n            \n", "\n\n")
+    let formatFsharp (s:string) = 
+        s
+            .Replace("                ", "")
+            .Replace("\n    \n", "\n\n")
+            .Replace("\n            \n", "\n\n")
 
 
     [<Test>]
@@ -15,7 +19,9 @@ type TestClass () =
         """using MvvmCross.Forms.Views;
            using TipCalc.Core.ViewModels; """ 
         |> Converter.run |> should equal (
-            "open MvvmCross.Forms.Views\nopen TipCalc.Core.ViewModels")
+            formatFsharp 
+               "open MvvmCross.Forms.Views
+                open TipCalc.Core.ViewModels")
         
 
     [<Test>]
@@ -202,6 +208,9 @@ type TestClass () =
         let csharp = 
              """void SendNotification(string messageBody)
                 {
+                    var intent = new Intent(this, typeof(MainActivity));
+                    intent.AddFlags(ActivityFlags.ClearTop);
+                    var pendingIntent = PendingIntent.GetActivity(this, 0, intent, PendingIntentFlags.OneShot);
 
                     var notificationBuilder = new Notification.Builder(this)
                                 .SetContentTitle("FCM Message")
@@ -213,9 +222,12 @@ type TestClass () =
                     var notificationManager = NotificationManager.FromContext(this);
                     notificationManager.Notify(0, notificationBuilder.Build());
                 }"""
-    
+
         let fsharp = 
              """member this.SendNotification(messageBody: string) =
+                    let mutable intent = new Intent(this, typeof<MainActivity>)
+                    intent.AddFlags(ActivityFlags.ClearTop)
+                    let mutable pendingIntent = PendingIntent.GetActivity(this, 0, intent, PendingIntentFlags.OneShot)
                     let mutable notificationBuilder =
                         new Notification.Builder(this).SetContentTitle("FCM Message").SetSmallIcon(Resource.Drawable.ic_launcher)
                             .SetContentText(messageBody).SetAutoCancel(True).SetContentIntent(pendingIntent)
@@ -239,6 +251,22 @@ type TestClass () =
             """type CodeActionEditorExtension() =
                     inherit TextEditorExtension()
                     let menuTimeout = 150"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert on clicked handler`` () = 
+        let csharp = 
+             """ContextMenu CreateContextMenu (CodeFixMenu entrySet)
+                {
+                    menuItem.Clicked += (sender, e) => sender.Foo();
+                }"""
+
+        let fsharp = 
+             """member this.CreateContextMenu(entrySet: CodeFixMenu) =
+                    menuItem.Clicked.AddHandler<_> (fun (sender, e) -> sender.Foo())"""
                    
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
@@ -295,6 +323,37 @@ type TestClass () =
         |> should equal (formatFsharp fsharp)
 
     [<Test>]
+    member this.``convert method attributes`` () = 
+        let csharp = 
+             """[CommandHandler (RefactoryCommands.QuickFix)]
+                void OnQuickFixCommand ()
+                {
+                    if (!AnalysisOptions.EnableFancyFeatures || smartTagMarginMarker == null) {
+                        //Fixes = RefactoringService.GetValidActions (Editor, DocumentContext, Editor.CaretLocation).Result;
+
+                        PopupQuickFixMenu (null, null);
+                        return;
+                    }
+
+                    CancelSmartTagPopupTimeout ();
+                    PopupQuickFixMenu (null, menu => { });
+                }"""
+
+        let fsharp = 
+             """[<CommandHandler(RefactoryCommands.QuickFix)>]
+                member this.OnQuickFixCommand() =
+                    if not AnalysisOptions.EnableFancyFeatures || smartTagMarginMarker = null then
+                        PopupQuickFixMenu(null, null)
+                        ()
+                    else
+                        CancelSmartTagPopupTimeout()
+                        PopupQuickFixMenu(null, fun menu -> ())"""
+                       
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
     member this.``convert multiple if statements with early returns`` () = 
         let csharp = 
              """public int Foo()
@@ -327,6 +386,333 @@ type TestClass () =
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``can convert class constructor with subclass args`` () = 
+        let csharp = 
+             """[Activity(Label = "Activity A", MainLauncher = true)]
+                public class MainApplication : MvxAndroidApplication
+                {
+                    public MainApplication(IntPtr javaReference, JniHandleOwnership transfer) : base(javaReference, transfer)
+                    {
+                    }
+                } """
+
+        let fsharp = 
+             """[<Activity(Label = "Activity A", MainLauncher = True)>]
+                type MainApplication(javaReference: IntPtr, transfer: JniHandleOwnership) =
+                    inherit MvxAndroidApplication(javaReference, transfer)"""
+                       
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert convert not statement`` () = 
+        let csharp = 
+            """
+                public bool IsPlayServicesAvailable ()
+                {
+                    int resultCode = GoogleApiAvailability.Instance.IsGooglePlayServicesAvailable (this);
+                    if (resultCode != ConnectionResult.Success)
+                    {
+                        if (GoogleApiAvailability.Instance.IsUserResolvableError (resultCode))
+                            msgText.Text = GoogleApiAvailability.Instance.GetErrorString (resultCode);
+                        else
+                        {
+                            msgText.Text = "This device is not supported";
+                            Finish ();
+                        }
+                        return false;
+                    }
+                    else
+                    {
+                        msgText.Text = "Google Play Services is available.";
+                        return true;
+                    }
+                }"""
+
+        let fsharp = 
+             """member this.IsPlayServicesAvailable() =
+                    let mutable resultCode = GoogleApiAvailability.Instance.IsGooglePlayServicesAvailable(this)
+                    if resultCode <> ConnectionResult.Success then
+                        if GoogleApiAvailability.Instance
+                            .IsUserResolvableError(resultCode) then
+                            msgText.Text <- GoogleApiAvailability.Instance.GetErrorString(resultCode)
+                        else
+                            msgText.Text <- "This device is not supported"
+                            Finish()
+                        False
+                    else
+                        msgText.Text <- "Google Play Services is available."
+                        True"""
+                       
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert convert lambda`` () = 
+        let csharp = 
+             """public void Include(INotifyCollectionChanged changed)
+                {
+                    changed.CollectionChanged += (s, e) => { var test = $"Args: {e.Action}{e.NewItems}{e.OldItems}, Index: {e.OldStartingIndex}"; };
+                }"""
+
+        let fsharp = 
+             """member this.Include(changed: INotifyCollectionChanged) =
+                    changed.CollectionChanged.AddHandler<_> (fun (s, e) ->
+                        let mutable test =
+                            sprintf "Args: %O%O%O, Index: %O" (e.Action) (e.NewItems) (e.OldItems) (e.OldStartingIndex)
+                        ())"""
+                       
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+
+
+    [<Test>]
+    member this.``convert full file - namespace with class`` () = 
+        let csharp = 
+         """using System;
+            using System.Collections.Specialized;
+            using System.Windows.Input;
+            using Android.App;
+            using Android.Views;
+            using Android.Widget;
+            using MvvmCross.Binding.BindingContext;
+            using MvvmCross.Navigation;
+            using MvvmCross.ViewModels;
+
+            namespace StarWarsSample.Forms.Droid
+            {
+                // This class is never actually executed, but when Xamarin linking is enabled it does how to ensure types and properties
+                // are preserved in the deployed app
+                [Android.Runtime.Preserve(AllMembers = true)]
+                public class LinkerPleaseInclude
+                {
+                    public void Include(Button button)
+                    {
+                        button.Click += (s, e) => button.Text = button.Text + "";
+                    }
+
+                public void Include(CheckBox checkBox)
+                {
+                    checkBox.CheckedChange += (sender, args) => checkBox.Checked = !checkBox.Checked;
+                }
+
+                public void Include(Switch @switch)
+                {
+                    @switch.CheckedChange += (sender, args) => @switch.Checked = !@switch.Checked;
+                }
+
+                public void Include(View view)
+                {
+                    view.Click += (s, e) => view.ContentDescription = view.ContentDescription + "";
+                }
+
+                public void Include(TextView text)
+                {
+                    text.AfterTextChanged += (sender, args) => text.Text = "" + text.Text;
+                    text.Hint = "" + text.Hint;
+                }
+
+                public void Include(CheckedTextView text)
+                {
+                    text.AfterTextChanged += (sender, args) => text.Text = "" + text.Text;
+                    text.Hint = "" + text.Hint;
+                }
+
+                public void Include(CompoundButton cb)
+                {
+                    cb.CheckedChange += (sender, args) => cb.Checked = !cb.Checked;
+                }
+
+                public void Include(SeekBar sb)
+                {
+                    sb.ProgressChanged += (sender, args) => sb.Progress = sb.Progress + 1;
+                }
+
+                public void Include(RadioGroup radioGroup)
+                {
+                    radioGroup.CheckedChange += (sender, args) => radioGroup.Check(args.CheckedId);
+                }
+
+                public void Include(RadioButton radioButton)
+                {
+                    radioButton.CheckedChange += (sender, args) => radioButton.Checked = args.IsChecked;
+                }
+
+                public void Include(RatingBar ratingBar)
+                {
+                    ratingBar.RatingBarChange += (sender, args) => ratingBar.Rating = 0 + ratingBar.Rating;
+                }
+
+                public void Include(Activity act)
+                {
+                    act.Title = act.Title + "";
+                }
+
+                public void Include(INotifyCollectionChanged changed)
+                {
+                    changed.CollectionChanged += (s, e) => { var test = $"{e.Action}{e.NewItems}{e.NewStartingIndex}{e.OldItems}"; };
+                }
+
+                public void Include(ICommand command)
+                {
+                    command.CanExecuteChanged += (s, e) => { if (command.CanExecute(null)) command.Execute(null); };
+                }
+
+                public void Include(MvvmCross.IoC.MvxPropertyInjector injector)
+                {
+                    injector = new MvvmCross.IoC.MvxPropertyInjector();
+                }
+
+                public void Include(System.ComponentModel.INotifyPropertyChanged changed)
+                {
+                    changed.PropertyChanged += (sender, e) =>
+                    {
+                        var test = e.PropertyName;
+                    };
+                }
+
+                public void Include(MvxTaskBasedBindingContext context)
+                {
+                    context.Dispose();
+                    var context2 = new MvxTaskBasedBindingContext();
+                    context2.Dispose();
+                }
+
+                public void Include(MvxNavigationService service, IMvxViewModelLoader loader)
+                {
+                    service = new MvxNavigationService(null, loader);
+                }
+
+                public void Include(ConsoleColor color)
+                {
+                    Console.Write("");
+                    Console.WriteLine("");
+                    color = Console.ForegroundColor;
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.ForegroundColor = ConsoleColor.Magenta;
+                    Console.ForegroundColor = ConsoleColor.White;
+                    Console.ForegroundColor = ConsoleColor.Gray;
+                    Console.ForegroundColor = ConsoleColor.DarkGray;
+                }
+
+                public void Include(MvvmCross.Plugin.Json.Plugin plugin)
+                {
+                    plugin.Load();
+                }
+            }
+        }"""
+
+        let fsharp = 
+             """namespace StarWarsSample.Forms.Droid
+
+                open MvvmCross.ViewModels
+                open MvvmCross.Navigation
+                open MvvmCross.Binding.BindingContext
+                open Android.Widget
+                open Android.Views
+                open Android.App
+                open System.Windows.Input
+                open System
+                open System.Collections.Specialized
+
+                [<Android.Runtime.Preserve(AllMembers = True)>]
+                type LinkerPleaseInclude() =
+                    member this.Include(button: Button) = button.Click.AddHandler<_> (fun (s, e) -> button.Text <- button.Text + "")
+                    member this.Include(checkBox: CheckBox) =
+                        checkBox.CheckedChange.AddHandler<_> (fun (sender, args) -> checkBox.Checked <- not checkBox.Checked)
+                    member this.Include((@switch): Switch) =
+                        (@switch.CheckedChange).AddHandler<_> (fun (sender, args) -> ``@switch``.Checked <- not (@switch).Checked)
+                    member this.Include(view: View) =
+                        view.Click.AddHandler<_> (fun (s, e) -> view.ContentDescription <- view.ContentDescription + "")
+
+                    member this.Include(text: TextView) =
+                        text.AfterTextChanged.AddHandler<_> (fun (sender, args) -> text.Text <- "" + text.Text)
+                        text.Hint <- "" + text.Hint
+
+                    member this.Include(text: CheckedTextView) =
+                        text.AfterTextChanged.AddHandler<_> (fun (sender, args) -> text.Text <- "" + text.Text)
+                        text.Hint <- "" + text.Hint
+
+                    member this.Include(cb: CompoundButton) =
+                        cb.CheckedChange.AddHandler<_> (fun (sender, args) -> cb.Checked <- not cb.Checked)
+                    member this.Include(sb: SeekBar) =
+                        sb.ProgressChanged.AddHandler<_> (fun (sender, args) -> sb.Progress <- sb.Progress + 1)
+                    member this.Include(radioGroup: RadioGroup) =
+                        radioGroup.CheckedChange.AddHandler<_> (fun (sender, args) -> radioGroup.Check(args.CheckedId))
+                    member this.Include(radioButton: RadioButton) =
+                        radioButton.CheckedChange.AddHandler<_> (fun (sender, args) -> radioButton.Checked <- args.IsChecked)
+                    member this.Include(ratingBar: RatingBar) =
+                        ratingBar.RatingBarChange.AddHandler<_> (fun (sender, args) -> ratingBar.Rating <- 0 + ratingBar.Rating)
+                    member this.Include(act: Activity) = act.Title <- act.Title + ""
+
+                    member this.Include(changed: INotifyCollectionChanged) =
+                        changed.CollectionChanged.AddHandler<_> (fun (s, e) ->
+                            let mutable test = sprintf "%O%O%O%O" (e.Action) (e.NewItems) (e.NewStartingIndex) (e.OldItems)
+                            ())
+
+                    member this.Include(command: ICommand) =
+                        command.CanExecuteChanged.AddHandler<_> (fun (s, e) ->
+                            if command.CanExecute(null) then command.Execute(null))
+
+                    member this.Include(injector: MvvmCross.IoC.MvxPropertyInjector) =
+                        injector <- new MvvmCross.IoC.MvxPropertyInjector()
+
+                    member this.Include(changed: System.ComponentModel.INotifyPropertyChanged) =
+                        changed.PropertyChanged.AddHandler<_> (fun (sender, e) ->
+                            let mutable test = e.PropertyName
+                            ())
+
+                    member this.Include(context: MvxTaskBasedBindingContext) =
+                        context.Dispose()
+                        let mutable context2 = new MvxTaskBasedBindingContext()
+                        context2.Dispose()
+
+                    member this.Include(service: MvxNavigationService, loader: IMvxViewModelLoader) =
+                        service <- new MvxNavigationService(null, loader)
+
+                    member this.Include(color: ConsoleColor) =
+                        Console.Write("")
+                        Console.WriteLine("")
+                        color <- Console.ForegroundColor
+                        Console.ForegroundColor <- ConsoleColor.Red
+                        Console.ForegroundColor <- ConsoleColor.Yellow
+                        Console.ForegroundColor <- ConsoleColor.Magenta
+                        Console.ForegroundColor <- ConsoleColor.White
+                        Console.ForegroundColor <- ConsoleColor.Gray
+                        Console.ForegroundColor <- ConsoleColor.DarkGray
+
+                    member this.Include(plugin: MvvmCross.Plugin.Json.Plugin) = plugin.Load()""" 
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    // TODO: this test sis currently failing. 
+    //[<Test>]
+    //member this.``convert class with generic types`` () = 
+        //let csharp = 
+        //     """public partial class TipView<T, Z> : MvxContentPage<TipViewModel>
+        //        {
+        //            public TipView(string s, int i) : base(message)
+        //            {
+        //                InitializeComponent();
+        //            }
+        //        }"""
+
+        //let fsharp = 
+        //     """type TipView<T,Z>(s: string, i: int) =
+        //            inherit MvxContentPage<TipViewModel>(message)"""
+                       
+        //csharp |> Converter.run 
+        //|> (fun x -> printfn "%s" x; x)
+        //|> should equal (formatFsharp fsharp)
 
     // TODO: this test sis currently failing. 
     //[<Test>]

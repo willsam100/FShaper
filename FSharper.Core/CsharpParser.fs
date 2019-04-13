@@ -321,7 +321,8 @@ type CSharpStatementWalker() =
     static member ParseInterpolatedStringContentSyntax (node:InterpolatedStringContentSyntax) = 
         match node with 
         //| :? InterpolatedStringTextSyntax as x -> "-" + x.TextToken.Text |> Line
-        | :? InterpolationSyntax as x -> x.Expression |> CSharpStatementWalker.ParseChsarpNode
+        | :? InterpolationSyntax as x -> x.Expression |> CSharpStatementWalker.ParseChsarpNode |> Expr.Paren
+        | :? InterpolatedStringTextSyntax as x -> Expr.Const (SynConst.String (x.WithoutTrivia().ToString(), range0))
         //| x -> x.ToFullString() |> Line
 
     static member ParseStatementSyntax (node:StatementSyntax) = 
@@ -387,7 +388,7 @@ type CSharpStatementWalker() =
         | :? UsingStatementSyntax as x -> 
 
             let var = 
-                CsToFsBinding.LetBind 
+                FSharpBinding.LetBind 
                     (
                         None, SynBindingKind.NormalBinding, false, false, [], 
                         SynValData (None, SynValInfo ([], SynArgInfo ([], false, None )), None), 
@@ -591,7 +592,22 @@ type CSharpStatementWalker() =
             |> Expr.Tuple
 
         | :? InstanceExpressionSyntax as x -> toLongIdent "this" //(fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "InstanceExpressionSyntax"
-        | :? InterpolatedStringExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "InterpolatedStringExpressionSyntax"
+        | :? InterpolatedStringExpressionSyntax as x -> 
+
+            let args = 
+                x.Contents 
+                |> Seq.map (fun x -> CSharpStatementWalker.ParseInterpolatedStringContentSyntax x) 
+                |> Seq.toList
+
+            let stringFormat = 
+                args 
+                |> List.map (function Expr.Const (SynConst.String (c,_)) -> c | _ -> "%O")
+                |> String.concat ""
+
+            let args = args |> List.choose (function Expr.Paren _ as e -> Some e | _ -> None)
+
+            (toLongIdent "sprintf" :: (Expr.Const (SynConst.String (stringFormat, range0))) :: args)
+            |> List.reduce (fun a b -> Expr.App (ExprAtomicFlag.NonAtomic, false, a, b) )
         | :? InvocationExpressionSyntax as x -> 
         
             let args =  
@@ -666,7 +682,8 @@ type CSharpStatementWalker() =
         | :? ThrowExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "ThrowExpressionSyntax"
         | :? TupleExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "TupleExpressionSyntax"
         | :? TypeOfExpressionSyntax as x -> 
-            let ident = x.Type.ToFullString() |> toLongIdentWithDots |> SynType.LongIdent |> List.singleton
+            let ident = x.Type.WithoutTrivia().ToFullString() |> toLongIdentWithDots |> SynType.LongIdent |> List.singleton
+            printfn "%A" ident
             Expr.TypeApp (Expr.Ident "typeof", ident)
         
         | :? TypeSyntax as x -> 

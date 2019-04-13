@@ -8,14 +8,16 @@ open System.Text.RegularExpressions
 [<EntryPoint>]
 let main argv =
 
-    let input = System.Console.In.ReadToEnd()
-    FSharper.Core.Converter.run input |> printfn "%s"
+    //let input = System.Console.In.ReadToEnd()
+    //FSharper.Core.Converter.run input |> printfn "%s"
 
 
     // Used for debugging/development. To see the the F# syntax, add here. 
     // the syntax can then be used to idently how to construct it from the CSharp syntax
-    let printFsharpTree = false
-    let input = """ """ // Add expected F# syntax here
+    let printFsharpTree = true
+    let input = 
+             """type Foo() = 
+                    let f = sprintf "%s %s" "a" "b" """ // Add expected F# syntax here
 
     if printFsharpTree then 
 
