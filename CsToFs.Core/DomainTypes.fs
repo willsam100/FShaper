@@ -276,7 +276,7 @@ and
         //|> String.concat sep
         //|> Line
 
-    | ReturnFromIf
+    | ReturnFromIf of Expr
 
 
 
@@ -331,6 +331,7 @@ type Field = {
     Name:string
     Type: string
     Initilizer:Expr option
+    IsConst : bool
 }
 
 type AttributeValue = 

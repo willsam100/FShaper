@@ -269,7 +269,7 @@ type LineTransformer() =
         | SyntaxKind.GotoKeyword -> "Goto" |> toLongIdent
         | SyntaxKind.BreakKeyword -> "Break" |> toLongIdent
         | SyntaxKind.ContinueKeyword -> "Continue" |> toLongIdent
-        | SyntaxKind.ReturnKeyword -> Expr.ReturnFromIf
+        //| SyntaxKind.ReturnKeyword -> Expr.ReturnFromIf
         | SyntaxKind.ThrowKeyword -> "Throw" |> toLongIdent
         | SyntaxKind.PublicKeyword -> "Public" |> toLongIdent
         | SyntaxKind.PrivateKeyword -> "Private" |> toLongIdent
@@ -417,6 +417,7 @@ type LineTransformer() =
             let condtion = LineTransformer.ParseChsarpNode x.Condition
             let statement = LineTransformer.ParseChsarpNode x.Statement
             let elseExpr = x.Else |>  Option.ofObj |> Option.map LineTransformer.ParseChsarpNode
+            printfn "elseExpr: %A" elseExpr
             Expr.IfThenElse (condtion, statement, elseExpr, SequencePointInfoForBinding.SequencePointAtBinding range0, false)
 
         | :? LabeledStatementSyntax as x -> "LabeledStatement" |> toLongIdent
@@ -428,7 +429,7 @@ type LineTransformer() =
             if x.Expression = null then 
                 Expr.Const SynConst.Unit
             else 
-                LineTransformer.ParseExpression x.Expression
+                LineTransformer.ParseExpression x.Expression |> Expr.ReturnFromIf
         | :? SwitchStatementSyntax as x -> "SwitchStatement" |> toLongIdent
         | :? ThrowStatementSyntax as x -> "ThrowStatement" |> toLongIdent
         | :? TryStatementSyntax as x -> "TryStatement" |> toLongIdent
@@ -491,6 +492,7 @@ type LineTransformer() =
         | :? CrefParameterSyntax as x -> "CrefParameter" |> toLongIdent
         | :? CrefSyntax as x -> "Cref" |> toLongIdent
         | :? ElseClauseSyntax as x -> 
+            printfn "ElseClause: %A" x.Statement
             x.Statement |> LineTransformer.ParseStatementSyntax
         | :? EqualsValueClauseSyntax as x -> x.Value |> LineTransformer.ParseExpression
         | :? ExplicitInterfaceSpecifierSyntax as x -> "ExplicitInterfaceSpecifier" |> toLongIdent
@@ -974,6 +976,7 @@ type FileContentsDumper() =
     member this.VisitFieldDeclaration (node:FieldDeclarationSyntax): Field seq = 
 
         let isPublic = node.Modifiers |> Seq.exists (fun x -> x.Kind() = SyntaxKind.PublicKeyword)
+        let isConstant = node.Modifiers |> Seq.exists (fun x -> x.Kind() = SyntaxKind.ConstKeyword)
 
         node.Declaration.Variables
         |> Seq.map (fun x -> 
@@ -982,6 +985,7 @@ type FileContentsDumper() =
                 Field.Type = node.Declaration.Type.WithoutTrivia().ToFullString()
                 Field.IsPublic = isPublic
                 Field.Initilizer = x.Initializer |> Option.ofObj |> Option.map (fun x -> x.Value |> LineTransformer.ParseExpression )
+                Field.IsConst = isConstant
             })
 
     member this.VisitPropertyDeclaration (node:PropertyDeclarationSyntax) = 

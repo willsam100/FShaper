@@ -28,8 +28,8 @@ type TestClass () =
                 {
                     public class TipView
                     {
-                        private Foo _foo = 34;
-                        public FooR Foo { 
+                        private int _foo = 34;
+                        public int Foo { 
                             get { return _foo; } 
                             set {
                                 _foo = value;
@@ -225,8 +225,159 @@ type TestClass () =
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
-        
-        
 
+
+    [<Test>]
+    member this.``convert const`` () = 
+        let csharp = 
+             """class CodeActionEditorExtension : TextEditorExtension
+                {
+                    const int menuTimeout = 150;
+                }"""
+
+        let fsharp = 
+            """type CodeActionEditorExtension() =
+                    inherit TextEditorExtension()
+                    let menuTimeout = 150"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert if else statement with an early return in else`` () = 
+        let csharp = 
+             """public int Foo()
+                {
+                    if (x)
+                    {
+                        SomeAction();
+                    } 
+                    else {
+                        return f;
+                    }
     
-        
+                    return 0;
+                }"""
+
+        let fsharp = 
+             """member this.Foo() =
+                if x then
+                    SomeAction()
+                    0
+                else f"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert if else statement with early return if first if`` () = 
+        let csharp = 
+             """public int Foo()
+                {
+                    if (x)
+                        return 0;
+
+                    Bar();
+                    return 1;
+                }"""
+
+        let fsharp = 
+             """member this.Foo() =
+                    if x then 0
+                    else
+                        Bar()
+                        1"""
+                       
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert multiple if statements with early returns`` () = 
+        let csharp = 
+             """public int Foo()
+                {
+                    if (x)
+                        return 0;
+
+                    Baz();
+                    if (y)
+                    {
+                        return 42;
+                    }
+                    else 
+                    {
+                        Bar();
+                    }
+                                        
+                    return 1;
+                }"""
+
+        let fsharp = 
+             """member this.Foo() =
+                    if x then 0
+                    else
+                        Baz()
+                        if y then 42
+                        else Bar()
+                        1"""
+                       
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    //[<Test>]
+    //member this.``convert continue and foreach loop`` () = 
+        //let csharp = 
+        //     """ContextMenu CreateContextMenu (CodeFixMenu entrySet)
+        //        {
+        //            var menu = new ContextMenu ();
+        //            foreach (var item in entrySet.Items) {
+        //                if (item == CodeFixMenuEntry.Separator) {
+        //                    menu.Items.Add (new SeparatorContextMenuItem ());
+        //                    continue;
+        //                }
+
+        //                var menuItem = new ContextMenuItem (item.Label);
+        //                menuItem.Context = item.Action;
+        //                if (item.Action == null) {
+        //                    if (!(item is CodeFixMenu itemAsMenu) || itemAsMenu.Items.Count <= 0) {
+        //                        menuItem.Sensitive = false;
+        //                    }
+        //                }
+        //                var subMenu = item as CodeFixMenu;
+        //                if (subMenu != null) {
+        //                    menuItem.SubMenu = CreateContextMenu (subMenu);
+        //                    menuItem.Selected += delegate {
+        //                        RefactoringPreviewTooltipWindow.HidePreviewTooltip ();
+        //                    };
+        //                    menuItem.Deselected += delegate { RefactoringPreviewTooltipWindow.HidePreviewTooltip (); };
+        //                } else {
+        //                    menuItem.Clicked += (sender, e) => ((System.Action)((ContextMenuItem)sender).Context) ();
+        //                    menuItem.Selected += (sender, e) => {
+        //                        RefactoringPreviewTooltipWindow.HidePreviewTooltip ();
+        //                        if (item.ShowPreviewTooltip != null) {
+        //                            item.ShowPreviewTooltip (e);
+        //                        }
+        //                    };
+        //                    menuItem.Deselected += delegate { RefactoringPreviewTooltipWindow.HidePreviewTooltip (); };
+        //                }
+        //                menu.Items.Add (menuItem);
+        //            }
+        //            menu.Closed += delegate { RefactoringPreviewTooltipWindow.HidePreviewTooltip (); };
+        //            return menu;
+        //        }"""
+    
+        //let fsharp = 
+        //     """member this.SendNotification(messageBody: string) =
+        //            let mutable notificationBuilder =
+        //                new Notification.Builder(this).SetContentTitle("FCM Message").SetSmallIcon(Resource.Drawable.ic_launcher)
+        //                    .SetContentText(messageBody).SetAutoCancel(True).SetContentIntent(pendingIntent)
+        //            let mutable notificationManager = NotificationManager.FromContext(this)
+        //            notificationManager.Notify(0, notificationBuilder.Build())"""
+                   
+        //csharp |> Converter.run 
+        //|> (fun x -> printfn "%s" x; x)
+        //|> should equal (formatFsharp fsharp)

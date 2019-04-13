@@ -32,7 +32,7 @@ module FormatOuput =
         let var = 
             CsToFsBinding.LetBind 
                 (
-                    None, SynBindingKind.NormalBinding, false, false, [], 
+                    None, SynBindingKind.NormalBinding, false, not x.IsConst, [], 
                     SynValData (None, SynValInfo ([], SynArgInfo ([], false, None )), None), 
                     Pat.Named (Pat.Wild, Ident(x.Name, range0), false, None), init)
         let x = Expr.LetOrUse (false, false, [var], Expr.Const <| SynConst.String ("Program35949ae4-3f6e-11e9-b4dc-230deb73e77f", range0))
@@ -85,8 +85,8 @@ module FormatOuput =
         let trandformedTree = 
             x.Body 
             |> replaceDotGetIfNotInLetBinding
-            |> rewriteInLetExp 
             |> rewriteReturnInIf 
+            |> rewriteInLetExp 
             |> wrapNewKeyword
             |> rewriteMethodWithPrefix methodNames
 
@@ -220,7 +220,7 @@ module FormatOuput =
             | None -> Expr.Null
 
         let binding = 
-            SynBinding.Binding (None, SynBindingKind.NormalBinding, false, true, [], PreXmlDocEmpty, 
+            SynBinding.Binding (None, SynBindingKind.NormalBinding, false, not x.IsConst, [], PreXmlDocEmpty, 
                 SynValData (
                     None, SynValInfo ([], SynArgInfo ([], false, Ident (x.Name, range0) |> Some )), None), // valData:SynValData *
                 SynPat.LongIdent

@@ -121,32 +121,62 @@ module TreeOps =
         //| DoBang      of expr:Expr
         //| Fixed of expr:Expr
 
-        | Expr.ReturnFromIf -> SynExpr.Const (SynConst.Unit, range0)
+        | Expr.ReturnFromIf e -> toSynExpr e //SynExpr.Const (SynConst.Unit, range0)
 
     let rewriteReturnInIf tree = 
 
         let rec isReturnFrom = function 
-            | Expr.ReturnFromIf -> true
+            | Expr.ReturnFromIf _ -> true
             | Expr.Sequential (_,_,c,d) -> isReturnFrom c || isReturnFrom d
             | Expr.IfThenElse (a,b,c,d,e) -> isReturnFrom b || c |> Option.map isReturnFrom |> Option.defaultValue false
             | Expr.App (a,b,c,d) -> isReturnFrom c || isReturnFrom d
             | _ -> false
 
+        let rec removeReturn = function 
+            | Expr.ReturnFromIf e -> e
+            | Expr.Sequential (a,b,c,d) -> Expr.Sequential (a,b, removeReturn c, removeReturn d)
+            | Expr.IfThenElse (a,b,c,d,e) -> Expr.IfThenElse (a, removeReturn b, c |> Option.map removeReturn, d, e)
+            | Expr.App (a,b,c,d) -> Expr.App (a,b, removeReturn c, removeReturn d)
+            | e -> e
+
+        //if () 
+        //    return 
+
+        //foo () 
+
         let rec walker tree = 
             match tree with 
             | Expr.Sequential (s1,s2,s3,s4) -> 
                 match s3 with 
-                | Expr.IfThenElse (x,y,z,i,j) when Option.isNone z -> 
-                    Expr.IfThenElse (x,y, Some s4, i, j)
+                | Expr.IfThenElse (x,y,z,i,j) when Option.isNone z && isReturnFrom y -> 
+                    Expr.IfThenElse (x, removeReturn y, Some s4, i, j)
 
-                | _ -> 
-                    Expr.Sequential (s1,s2,walker s3,walker s4)
+                | Expr.IfThenElse (x,y,z,i,j) when Option.map isReturnFrom z = Some true -> 
+                    let first = Expr.Sequential (SequencePointInfoForSeq.SequencePointsAtSeq, true, y, s4)  
+                    Expr.IfThenElse (x,first, z |> Option.map removeReturn, i, j)                
+
+                | _ ->  Expr.Sequential (s1,s2,walker s3,walker s4)
 
             | Expr.IfThenElse (a,b,c,d,e) -> 
                 let a = walker a
                 let b = walker b
                 let c = c |> Option.map walker
                 Expr.IfThenElse (a,b,c,d,e)
+
+
+                //match isReturnFrom b, c |> Option.map isReturnFrom, c with 
+                //| true, Some false, _ -> Expr.IfThenElse (a,b,c,d,e)
+                //| true, Some true, Some x -> Expr.IfThenElse (a,b,c,d,e)
+                
+                //    let second = Expr.App (ExprAtomicFlag.NonAtomic,false,b,x)
+                //    Expr.IfThenElse (a,b,Some second,d,e)
+
+                //| false, Some true, Some x -> 
+                
+                //    let second = Expr.App (ExprAtomicFlag.NonAtomic,false,b,x)
+                //    Expr.IfThenElse (a,b,Some second,d,e)
+
+                //| false, Some false, _ -> Expr.IfThenElse (a,b,c,d,e)
 
             | Expr.App (a,b,c,d) -> 
 
