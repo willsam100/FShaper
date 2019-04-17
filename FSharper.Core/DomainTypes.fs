@@ -334,8 +334,8 @@ type Class = {
     Methods: Method list
     Properties: Prop list
     Attributes: Attribute list
-    BaseClass: string option
-    ImplementInterfaces: string list
+    BaseClass: SynType option
+    ImplementInterfaces: SynType list
     TypeParameters:string list
 }
 

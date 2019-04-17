@@ -265,13 +265,37 @@ module FormatOuput =
                     SynAttribute.Target = None
                 }
             )
+            
+        let typeVals = 
+            cn.TypeParameters
+            |> List.map (fun t -> TyparDecl ([], Typar (ident (t, range0),NoStaticReq, false)) )
+            
         let x = 
-            ComponentInfo (att, [], [], toIdent cn.Name.Name, PreXmlDocEmpty, false, None, range0)
+            ComponentInfo (att, typeVals, [], toIdent cn.Name.Name, PreXmlDocEmpty, false, None, range0)
 
         let properties = cn.Properties |> List.collect toProperty
         let methodNames = cn.Methods |> List.map (fun x -> x.Name.Replace ("this.", ""))
         let methods = cn.Methods |> List.map (toMethod methodNames)
         let fields = cn.Fields |> List.map toLet
+
+        let interfaces = 
+            cn.ImplementInterfaces 
+            |> List.map (fun x -> 
+
+                let method = {
+                    Method.Accessibility = None
+                    Method.Body = Expr.Const SynConst.Unit
+                    Method.Name = "Todo"
+                    Method.IsAsync = false
+                    Method.IsOverride = false
+                    Method.IsVirtual = false
+                    Method.IsPrivate = true
+                    Method.Parameters = []
+                    Method.Attributes = []
+                    Method.ReturnType = "void"
+                }
+                
+                SynMemberDefn.Interface (x,method |> toMethod [] |> List.singleton |> Some, range0))
 
         let ctors = 
 
@@ -310,13 +334,13 @@ module FormatOuput =
                     | None -> SynExpr.Const (SynConst.Unit, range0)
 
                 SynMemberDefn.ImplicitInherit 
-                    (SynType.LongIdent (baseClass |> toLongIdentWithDots), args, None, range0)
+                    (baseClass, args, None, range0)
                     
             ) |> function 
             | Some x -> [ctor; x]
             | None -> [ctor]
 
-        SynTypeDefn.TypeDefn (x, SynTypeDefnRepr.ObjectModel (TyconUnspecified, ctors @ fields @ properties @ methods, range0), [], range0)
+        SynTypeDefn.TypeDefn (x, SynTypeDefnRepr.ObjectModel (TyconUnspecified, ctors @ fields @ properties @ methods @ interfaces, range0), [], range0)
         |> List.singleton
         |> (fun x -> SynModuleDecl.Types (x, range0))
 

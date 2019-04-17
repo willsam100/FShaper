@@ -16,8 +16,10 @@ let main argv =
     // the syntax can then be used to idently how to construct it from the CSharp syntax
     let printFsharpTree = true
     let input = 
-             """type Foo() = 
-                    let f = sprintf "%s %s" "a" "b" """ // Add expected F# syntax here
+             """type Foo =
+                    member this.Dispose() = 
+                        FooBar()
+                    //interface IDisposable  """ // Add expected F# syntax here
 
     if printFsharpTree then 
 

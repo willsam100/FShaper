@@ -434,7 +434,13 @@ type CSharpStatementWalker() =
         | :? BaseCrefParameterListSyntax as x -> "BaseCrefParameterList" |> toLongIdent
         | :? BaseListSyntax as x -> "BaseList" |> toLongIdent
         | :? BaseParameterListSyntax as x -> "BaseParameterList" |> toLongIdent
-        | :? BaseTypeSyntax as x -> "BaseType" |> toLongIdent
+        | :? BaseTypeSyntax as x -> 
+
+            printfn "| :? BaseTypeSyntax"
+            printfn "%A" x
+            printfn "%A" <| x.Kind()
+
+            "BaseType" |> toLongIdent
         | :? CatchClauseSyntax as x -> "CatchClause" |> toLongIdent
         | :? CatchDeclarationSyntax as x -> "CatchDeclaration" |> toLongIdent
         | :? CatchFilterClauseSyntax as x -> "CatchFilterClause" |> toLongIdent
@@ -685,9 +691,11 @@ type CSharpStatementWalker() =
             let ident = x.Type.WithoutTrivia().ToFullString() |> toLongIdentWithDots |> SynType.LongIdent |> List.singleton
             printfn "%A" ident
             Expr.TypeApp (Expr.Ident "typeof", ident)
-        
+
         | :? TypeSyntax as x -> 
             printfn "TypeSyntax: %A" x
+            printfn "TypeSyntax: %A" <| x.Kind()
+            
             (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "TypeSyntax"
 
     static member ParseNodeOrToken(node:SyntaxNodeOrToken): Expr = 
@@ -774,16 +782,44 @@ type FSharperTreeBuilder() =
             |> Option.toList
             |> List.concat
 
+        let rec doesBaseTypeBeginWithI = function
+        | SynType.App  (x, _, _, _, _, _, _) -> doesBaseTypeBeginWithI x
+        | SynType.LongIdent x -> 
+            match ParserUtil.joinLongIdentWithDots x with 
+            | x when x.StartsWith "I" -> true
+            | _ -> false
+        | _ -> false
+
         let baseTypes = 
             node.BaseList 
             |> Option.ofObj 
             |> Option.bind (fun x -> 
+
                 x.Types 
-                |> Seq.map (fun x -> x.WithoutTrivia().ToFullString())
+                |> Seq.map (fun x -> 
+
+                    match x.Type with 
+                    | :? NameSyntax as n -> 
+                        match n with 
+                        | :? GenericNameSyntax as genericName -> 
+
+                            let typeArgs = 
+                                genericName.TypeArgumentList.Arguments
+                                |> Seq.map (fun x -> x.WithoutTrivia().ToString())
+                                |> Seq.map (toLongIdentWithDots >> SynType.LongIdent)
+                                |> Seq.toList
+
+                            let x = genericName.Identifier.WithoutTrivia().ToFullString() |> toLongIdentWithDots |> SynType.LongIdent
+
+                            SynType.App  (x, None, typeArgs, [], None, false, range0)
+                            
+                        | _ -> n.WithoutTrivia().ToString() |> toLongIdentWithDots |> SynType.LongIdent
+                    | _ -> x.Type.WithoutTrivia().ToString() |> toLongIdentWithDots |> SynType.LongIdent )
                 |> Seq.toList
                 |> function 
                 | [] -> None
-                | x::xs -> Some (x, xs) )
+                | x::_ as xs when doesBaseTypeBeginWithI x -> Some (None, xs) 
+                | x::xs -> Some (Some x, xs)  )
 
         let ctors = 
             node.ChildNodes().OfType<ConstructorDeclarationSyntax>()
@@ -809,7 +845,7 @@ type FSharperTreeBuilder() =
         {
             Name = { ClassName.Name = node.Identifier.ValueText; Generics = [] }
             ImplementInterfaces = baseTypes |> Option.map (snd) |> Option.toList |> List.concat
-            BaseClass = baseTypes |> Option.map (fst)
+            BaseClass = baseTypes |> Option.bind fst
             Constructors = ctors
             Fields = fields
             Methods = methods

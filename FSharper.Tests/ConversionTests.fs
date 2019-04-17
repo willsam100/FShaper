@@ -694,25 +694,70 @@ type TestClass () =
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
 
-    // TODO: this test sis currently failing. 
-    //[<Test>]
-    //member this.``convert class with generic types`` () = 
-        //let csharp = 
-        //     """public partial class TipView<T, Z> : MvxContentPage<TipViewModel>
-        //        {
-        //            public TipView(string s, int i) : base(message)
-        //            {
-        //                InitializeComponent();
-        //            }
-        //        }"""
+    [<Test>]
+    member this.``convert class with generic types`` () = 
+        let csharp = 
+             """public partial class TipView<T, Z> : MvxContentPage<TipViewModel>
+                {
+                    public TipView(string s, int i) : base(message)
+                    {
+                        InitializeComponent();
+                    }
+                }"""
 
-        //let fsharp = 
-        //     """type TipView<T,Z>(s: string, i: int) =
-        //            inherit MvxContentPage<TipViewModel>(message)"""
-                       
-        //csharp |> Converter.run 
-        //|> (fun x -> printfn "%s" x; x)
-        //|> should equal (formatFsharp fsharp)
+        let fsharp = 
+             """type TipView<'T, 'Z>(s: string, i: int) =
+                    inherit MvxContentPage<TipViewModel>(message)"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert class with interface beginning with I as interface`` () = 
+        let csharp = 
+             """public class Foo : IDisposable
+                {
+                    public void Dispose()
+                    {
+                        FooBar();
+                    }
+                }"""
+
+        let fsharp = 
+             """type Foo() =
+                    member this.Dispose() = FooBar()
+                    interface IDisposable with
+                        member this.Todo() = ()"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert class with multiple interfaces`` () = 
+        let csharp = 
+             """public class Foo : IDisposable, IFoo
+                {
+                    public void Dispose()
+                    {
+                        FooBar();
+                    }
+                }"""
+
+        let fsharp = 
+             """type Foo() =
+                    member this.Dispose() = FooBar()
+
+                    interface IDisposable with
+                        member this.Todo() = ()
+
+                    interface IFoo with
+                        member this.Todo() = ()"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
 
     // TODO: this test sis currently failing. 
     //[<Test>]
