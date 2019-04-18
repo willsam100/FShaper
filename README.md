@@ -15,6 +15,12 @@ Documentation/blog posts is another area where there is a lot of C# code, and to
 
 FSharper reduces the time to do this translation, and improves the code quality slighly in the process. 
 
+## Usage 
+
+copy C# code, pipe into the program 
+
+on a Mac `pbpaste | dotnet run | pbcopy`
+
 ## Removing/Minimising the pain
 
 This project uses the untyped abstract syntax tree of Roslyn. Because of that it is not possible to generate perfect F# code. Addtionally, to support the goals above (blog posts) valid C# code is not expected would not compile (convert a method, that does not have a class or the required nuget packages declared). 
