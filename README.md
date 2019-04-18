@@ -20,6 +20,11 @@ FSharper reduces the time to do this translation, and improves the code quality 
 copy C# code, pipe into the program 
 
 on a Mac `pbpaste | dotnet run | pbcopy`
+FShaper can be installed a dotnet gloabl tool. 
+`cd FSharper`
+`./build.sh && ./install.sh`
+`pbpaste | fsharper | pbcopy`
+
 
 ## Removing/Minimising the pain
 
