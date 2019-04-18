@@ -1,2 +1,2 @@
-dotnet tool uninstall -g FSharper
-dotnet tool install --add-source ./nupkg -g FSharper
+dotnet tool uninstall -g fsharper
+dotnet tool install --add-source ./nupkg -g fsharper
