@@ -19,11 +19,12 @@ FSharper reduces the time to do this translation, and improves the code quality 
 
 copy C# code, pipe into the program 
 
-on a Mac `pbpaste | dotnet run | pbcopy`
+on a Mac `pbpaste | dotnet run | pbcopy`<br>
 FShaper can be installed a dotnet gloabl tool. 
-`cd FSharper`
-`./build.sh && ./install.sh`
-`pbpaste | fsharper | pbcopy`
+
+`cd FSharper`<br>
+`./build.sh && ./install.sh`<br>
+`pbpaste | fsharper | pbcopy`<br>
 
 
 ## Removing/Minimising the pain
@@ -45,9 +46,9 @@ Once it is clear that the most difficult chanllenges have been solved, completin
 Check if you problem has been raised as and issue fist. if not raise and issue, for simple fixes a supporting PR woudl be great. 
 
 ## End Goal 
-To have this project embedded in either/all:
-Visual Studio 
-Visual Stuido Code (with Ionide)
-Web tool
-As browser plugin that automatically converts C# code to F# 
+To have this project embedded in either/all:<br>
+Visual Studio <br>
+Visual Stuido Code (with Ionide)<br>
+Web tool<br>
+As browser plugin that automatically converts C# code to F# <br>
 
