@@ -14,6 +14,11 @@ open Microsoft.FSharp.Compiler.Range
 module ParserUtil = 
     let toSingleIdent (s:string) = Ident(s, range0)
 
+    let fixKeywords k = 
+        match k with 
+        | "object" -> "obj"
+        | x -> x
+
     let toIdent (s:string) = 
         s.Split('.') 
         |> Array.toList
@@ -43,6 +48,24 @@ module ParserUtil =
 
     let toPatId ident = 
         SynSimplePat.Id (Ident(ident, range0), None, false, true, false, range0)
+
+    let parseType (t: TypeSyntax) = 
+        match t with 
+        | :? NameSyntax as n -> 
+            match n with 
+            | :? GenericNameSyntax as genericName -> 
+                let typeArgs = 
+                    genericName.TypeArgumentList.Arguments
+                    |> Seq.map (fun x -> x.WithoutTrivia().ToString())
+                    |> Seq.map (toLongIdentWithDots >> SynType.LongIdent)
+                    |> Seq.toList
+
+                let x = genericName.Identifier.WithoutTrivia().ToFullString() |> toLongIdentWithDots |> SynType.LongIdent
+
+                SynType.App  (x, None, typeArgs, [], None, false, range0)
+
+            | _ -> n.WithoutTrivia().ToString() |> fixKeywords |> toLongIdentWithDots |> SynType.LongIdent
+        | x -> x.WithoutTrivia().ToString() |> fixKeywords |> toLongIdentWithDots |> SynType.LongIdent 
     
 
 [<AutoOpen>]
@@ -88,15 +111,19 @@ type CSharpStatementWalker() =
             let right = node.Right |> CSharpStatementWalker.ParseChsarpNode
 
             if isPlusEquals then 
-                //let mem =   |> toLongIdent, Expr.Const SynConst.Unit)
-                let ident = node.Left.WithoutTrivia().ToFullString() |> toLongIdent
+                match right with 
+                | Expr.Lambda _ -> 
 
-                let app = Expr.DotGet (ident, toLongIdentWithDots "AddHandler" )
-                //let app = Expr.App (ExprAtomicFlag.Atomic, false, app, Expr.Const SynConst.Unit)
-                let app = Expr.TypeApp (app, [SynType.Anon range0])
-
-                Expr.App (ExprAtomicFlag.Atomic, false, app, Expr.Paren right)
-                
+                    let ident = node.Left.WithoutTrivia().ToFullString() |> toLongIdent
+                    let app = Expr.DotGet (ident, toLongIdentWithDots "AddHandler" )
+                    let app = Expr.TypeApp (app, [SynType.Anon range0])
+                    Expr.App (ExprAtomicFlag.Atomic, false, app, Expr.Paren right)
+                | _ -> 
+                    let addOp = PrettyNaming.CompileOpName "+"
+                    let add = 
+                        Expr.App (ExprAtomicFlag.NonAtomic, false, 
+                            Expr.App(ExprAtomicFlag.NonAtomic, true, Expr.Ident addOp, left), right) 
+                    Expr.Set (left, add)
             else
                 Expr.Set (left, right)
 
@@ -328,7 +355,7 @@ type CSharpStatementWalker() =
     static member ParseStatementSyntax (node:StatementSyntax) = 
         match node with 
         | :? BlockSyntax as x -> x.Statements  |> Seq.map CSharpStatementWalker.ParseStatementSyntax |> sequential
-        | :? BreakStatementSyntax as x -> "BreakStatement" |> toLongIdent
+        | :? BreakStatementSyntax as x -> Expr.ReturnFromIf <| Expr.Const SynConst.Unit // "BreakStatement" |> toLongIdent
         | :? CheckedStatementSyntax as x -> "CheckedStatement" |> toLongIdent
         | :? CommonForEachStatementSyntax as x -> 
             match x with 
@@ -356,7 +383,7 @@ type CSharpStatementWalker() =
 
                 Expr.ForEach (SequencePointInfoForForLoop.SequencePointAtForLoop range0, SeqExprOnly.SeqExprOnly false, true, var, exp, body)
 
-        | :? ContinueStatementSyntax as x -> "ContinueStatement" |> toLongIdent
+        | :? ContinueStatementSyntax as x -> Expr.ReturnFromIf <| Expr.Const SynConst.Unit
         | :? DoStatementSyntax as x -> "DoStatement" |> toLongIdent
         | :? EmptyStatementSyntax as x -> "EmptyStatement" |> toLongIdent
         | :? ExpressionStatementSyntax as x ->
@@ -499,7 +526,7 @@ type CSharpStatementWalker() =
                         None, SynValInfo ([], SynArgInfo ([], false, None )), None), 
                     Pat.Named (Pat.Wild, Ident(x.Identifier.ValueText, range0), false, None), init)], Expr.InLetPlaceholder)
 
-        | :? VariableDesignationSyntax as x -> "VariableDesignation" |> toLongIdent
+        //| :? VariableDesignationSyntax as x -> x.with//"VariableDesignation" |> toLongIdent
         | :? WhenClauseSyntax as x -> "WhenClause" |> toLongIdent
         | :? XmlAttributeSyntax as x -> "XmlAttribute" |> toLongIdent
         | :? XmlElementEndTagSyntax as x -> "XmlElementEndTag" |> toLongIdent
@@ -513,6 +540,22 @@ type CSharpStatementWalker() =
         if node = null then  printfn "Node was null"; Expr.Const SynConst.Unit else
 
         match node with
+        | :? IsPatternExpressionSyntax as x -> 
+            let expr = CSharpStatementWalker.ParseExpression x.Expression
+            printfn "ClauseE:\n%A" expr
+            printfn "ClauseP:\n%A" x.Pattern
+            let clause = 
+                match x.Pattern with 
+                | :? DeclarationPatternSyntax as x -> 
+
+                    let t = x.Type |> ParserUtil.parseType
+                    let name = x.Designation.WithoutTrivia().ToString() |> toSingleIdent
+                    MatchClause.Clause (SynPat.Named (SynPat.IsInst (t,range0), name, false, None, range0), None, Expr.MatchIsPlaceholder)
+                //| :? ConstantPatternSyntax as x -> x.Expression
+
+            printfn "Clause:\n%A" clause
+            Expr.Match (SequencePointInfoForBinding.SequencePointAtBinding range0, expr, [clause], false)
+
         | :? IdentifierNameSyntax as x -> CSharpStatementWalker.ParseChsarpNode x
         | :? AnonymousFunctionExpressionSyntax as x -> 
             match x with 
@@ -564,14 +607,14 @@ type CSharpStatementWalker() =
         | :? CastExpressionSyntax as x -> 
             printfn "CastExpressionSyntax: %b" (x.Expression = null)
             let exp = CSharpStatementWalker.ParseExpression x.Expression
-            let castType = x.Type.WithoutTrivia().ToFullString() |> toLongIdentWithDots
-            Expr.Downcast (exp, SynType.LongIdent castType)
+            let castType = ParserUtil.parseType x.Type
+            Expr.Downcast (exp, castType)
 
         | :? CheckedExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "CheckedExpressionSyntax"
         | :? ConditionalAccessExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "ConditionalAccessExpressionSyntax"
         | :? ConditionalExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "ConditionalExpressionSyntax" 
 
-        | :? DeclarationExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "DeclarationExpressionSyntax"
+        //| :? DeclarationExpressionSyntax as x -> x.Designation x.Type |> ParserUtil.parseType
         | :? DefaultExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "DefaultExpressionSyntax"
         | :? ElementAccessExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "ElementAccessExpressionSyntax"
         | :? ElementBindingExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "ElementBindingExpressionSyntax"
@@ -670,7 +713,7 @@ type CSharpStatementWalker() =
 
             Expr.New (false, typeName |> SynType.LongIdent, Expr.Paren args)
         | :? OmittedArraySizeExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "OmittedArraySizeExpressionSyntax"
-        | :? ParenthesizedExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "ParenthesizedExpressionSyntax"
+        | :? ParenthesizedExpressionSyntax as x -> CSharpStatementWalker.ParseExpression x.Expression
         | :? PostfixUnaryExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "PostfixUnaryExpressionSyntax"
         | :? PrefixUnaryExpressionSyntax as x -> 
             match x.Kind() with 
@@ -796,25 +839,7 @@ type FSharperTreeBuilder() =
             |> Option.bind (fun x -> 
 
                 x.Types 
-                |> Seq.map (fun x -> 
-
-                    match x.Type with 
-                    | :? NameSyntax as n -> 
-                        match n with 
-                        | :? GenericNameSyntax as genericName -> 
-
-                            let typeArgs = 
-                                genericName.TypeArgumentList.Arguments
-                                |> Seq.map (fun x -> x.WithoutTrivia().ToString())
-                                |> Seq.map (toLongIdentWithDots >> SynType.LongIdent)
-                                |> Seq.toList
-
-                            let x = genericName.Identifier.WithoutTrivia().ToFullString() |> toLongIdentWithDots |> SynType.LongIdent
-
-                            SynType.App  (x, None, typeArgs, [], None, false, range0)
-                            
-                        | _ -> n.WithoutTrivia().ToString() |> toLongIdentWithDots |> SynType.LongIdent
-                    | _ -> x.Type.WithoutTrivia().ToString() |> toLongIdentWithDots |> SynType.LongIdent )
+                |> Seq.map (fun x -> ParserUtil.parseType x.Type)
                 |> Seq.toList
                 |> function 
                 | [] -> None
@@ -865,7 +890,7 @@ type FSharperTreeBuilder() =
             Ctor.Parameters = 
                 node.ParameterList.Parameters 
                 |> Seq.map (fun x -> 
-                    {Parameter.Name = x.Identifier.WithoutTrivia().Text; Type = x.Type.WithoutTrivia().ToFullString() })
+                    {Parameter.Name = x.Identifier.WithoutTrivia().Text; Type = ParserUtil.parseType x.Type })
                 |> Seq.toList
 
             SubclassArgs = 
@@ -893,7 +918,7 @@ type FSharperTreeBuilder() =
             Method.Parameters = 
                 node.ParameterList.Parameters 
                 |> Seq.map (fun x -> 
-                    {Parameter.Name = x.Identifier.WithoutTrivia().Text; Type = x.Type.WithoutTrivia().ToFullString() })
+                    {Parameter.Name = x.Identifier.WithoutTrivia().Text; Type = ParserUtil.parseType x.Type })
                 |> Seq.toList
             Method.Body =
                 node.Body |> Option.ofObj |> Option.map (fun x -> 

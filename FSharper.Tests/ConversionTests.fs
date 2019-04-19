@@ -8,10 +8,13 @@ open FsUnit
 type TestClass () =
 
     let formatFsharp (s:string) = 
-        s
-            .Replace("                ", "")
-            .Replace("\n    \n", "\n\n")
-            .Replace("\n            \n", "\n\n")
+
+        let indent = "                "
+        s.Split ("\n") |> Array.map (fun x -> if x.StartsWith indent then x.Substring indent.Length else x) |> String.concat "\n"
+        |> (fun s -> 
+            s
+                .Replace("\n    \n", "\n\n")
+                .Replace("\n            \n", "\n\n") )
 
 
     [<Test>]
@@ -759,6 +762,211 @@ type TestClass () =
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
 
+    [<Test>]
+    member this.``convert foreach with break`` () = 
+        let csharp = 
+             """public int Foo(IEnumerable<int> myList)
+                {
+                    var x = 0;
+                    foreach (var i in myList)
+                    {
+                        if (x >= 10) 
+                            break;
+
+                        x += i;
+                    }
+                    return x;
+                }"""
+
+        let fsharp = 
+             """member this.Foo(myList: IEnumerable<int>) =
+                    let mutable x = 0
+                    for i in myList do
+                        if x >= 10 then ()
+                        else x <- x + i
+                    x"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert foreach with continue`` () = 
+        let csharp = 
+             """public int Foo(IEnumerable<int> myList)
+                {
+                    var x = 0;
+                    foreach (var i in myList)
+                    {
+                        if (x == 10) 
+                            continue;
+
+                        x += i;
+                    }
+                    return x;
+                }"""
+
+        let fsharp = 
+             """member this.Foo(myList: IEnumerable<int>) =
+                    let mutable x = 0
+                    for i in myList do
+                        if x = 10 then ()
+                        else x <- x + i
+                    x"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert private method`` () = 
+        let csharp = 
+             """public class Foo
+                {
+                    private void Foo() 
+                    {
+                        return;
+                    }
+                }"""
+
+        let fsharp = 
+             """type Foo() =
+                    member private this.Foo() = ()"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert object type to obj`` () = 
+        let csharp = 
+             """public class Foo
+                {
+                    public Foo(object oo) { }
+                    
+                    public void Foo(object o)
+                    {
+                        var x = (object) o;
+                        return;
+                    }
+                }"""
+
+        let fsharp = 
+             """type Foo(oo: obj) =
+                    member this.Foo(o: obj) =
+                        let mutable x = o :?> obj
+                        ()"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert C# is statement with name binding`` () = 
+        let csharp = 
+             """public CodeFixMenu Foo(object item)
+                {
+                    if (item is CodeFixMenu itemAsMenu)
+                    {
+                        return itemAsMenu;
+                    }
+                    return null;
+                }"""
+
+        let fsharp = 
+             """member this.Foo(item: obj) =
+                    match item with
+                    | :? CodeFixMenu as itemAsMenu -> itemAsMenu
+                    | _ -> null"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert C# is statement with name binding nested if statement using logical OR`` () = 
+        let csharp = 
+             """public void Foo(object item)
+                {
+                    if (!(item is CodeFixMenu itemAsMenu) || itemAsMenu.Items.Count <= 0) {
+                        menuItem.Sensitive = false;
+                    }
+                }"""
+
+        let fsharp = 
+             """member this.Foo(item: obj) =
+                    match item with
+                    | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items.Count <= 0 -> menuItem.Sensitive <- False
+                    | :? CodeFixMenu as itemAsMenu -> ()
+                    | _ -> menuItem.Sensitive <- False"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert C# is statement with name binding nested if statement using logical AND`` () = 
+        let csharp = 
+             """public void Foo(object item)
+                {
+                    if ((item is CodeFixMenu itemAsMenu) && itemAsMenu.Items.Count > 0) {
+                        menuItem.Sensitive = true;
+                    }
+                }"""
+
+        let fsharp = 
+             """member this.Foo(item: obj) =
+                    match item with
+                    | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items.Count > 0 -> menuItem.Sensitive <- True
+                    | _ -> ()"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert C# is statement with name binding nested if statement using logical AND twice`` () = 
+        let csharp = 
+             """public void Foo(object item)
+                {
+                    if ((item is CodeFixMenu itemAsMenu) && itemAsMenu.Items != null && itemAsMenu.Items.Count > 0) {
+                        menuItem.Sensitive = true;
+                    }
+                }"""
+
+        let fsharp = 
+             """member this.Foo(item: obj) =
+                    match item with
+                    | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items <> null && itemAsMenu.Items.Count > 0 ->
+                        menuItem.Sensitive <- True
+                    | _ -> ()"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert C# is statement with name binding nested if statement using logical OR twice`` () = 
+        let csharp = 
+             """public void Foo(object item)
+                {
+                    if (!(item is CodeFixMenu itemAsMenu) || itemAsMenu.Items == null || itemAsMenu.Items.Count <= 0) {
+                        menuItem.Sensitive = false;
+                    }
+                }"""
+
+        let fsharp = 
+             """member this.Foo(item: obj) =
+                    match item with
+                    | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items = null -> menuItem.Sensitive <- False
+                    | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items.Count <= 0 -> menuItem.Sensitive <- False
+                    | :? CodeFixMenu as itemAsMenu -> ()
+                    | _ -> menuItem.Sensitive <- False"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
     // TODO: this test sis currently failing. 
     //[<Test>]
     //member this.``convert continue and foreach loop`` () = 
@@ -803,12 +1011,36 @@ type TestClass () =
         //        }"""
     
         //let fsharp = 
-        //     """member this.SendNotification(messageBody: string) =
-        //            let mutable notificationBuilder =
-        //                new Notification.Builder(this).SetContentTitle("FCM Message").SetSmallIcon(Resource.Drawable.ic_launcher)
-        //                    .SetContentText(messageBody).SetAutoCancel(True).SetContentIntent(pendingIntent)
-        //            let mutable notificationManager = NotificationManager.FromContext(this)
-        //            notificationManager.Notify(0, notificationBuilder.Build())"""
+        //     """member this.CreateContextMenu(entrySet: CodeFixMenu) =
+        //            let mutable menu = new ContextMenu()
+        //            for item in entrySet.Items do
+        //                if item = CodeFixMenuEntry.Separator then
+        //                    menu.Items
+        //                        .Add(new SeparatorContextMenuItem())
+        //                    ()
+        //                else
+        //                    let mutable menuItem = new ContextMenuItem(item.Label)
+        //                    menuItem.Context <- item.Action
+        //                    if item.Action = null then
+        //                        if not ParenthesizedExpressionSyntax || itemAsMenu.Items.Count <= 0 then menuItem.Sensitive <- False
+        //                    else
+        //                        let mutable subMenu = item :?> CodeFixMenu
+        //                        if subMenu <> null then
+        //                            menuItem.SubMenu <- CreateContextMenu(subMenu)
+        //                            menuItem.Selected.AddHandler<_> (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
+        //                            menuItem.Deselected.AddHandler<_>
+        //                                (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
+        //                        else
+        //                            menuItem.Clicked.AddHandler<_> (fun (sender, e) -> ParenthesizedExpressionSyntax())
+        //                            menuItem.Selected.AddHandler<_> (fun (sender, e) ->
+        //                                RefactoringPreviewTooltipWindow.HidePreviewTooltip()
+        //                                if item.ShowPreviewTooltip <> null then item.ShowPreviewTooltip(e))
+        //                            menuItem.Deselected.AddHandler<_>
+        //                                (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
+        //                        menu.Items
+        //                            .Add(menuItem)
+        //            menu.Closed.AddHandler<_> (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
+        //            menu"""
                    
         //csharp |> Converter.run 
         //|> (fun x -> printfn "%s" x; x)

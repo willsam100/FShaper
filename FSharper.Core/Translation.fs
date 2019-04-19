@@ -42,11 +42,6 @@ module TreeOps =
         | None -> failwith "Something went wrong during parsing!"
 
 
-    let fixKeywords k = 
-        match k with 
-        | "object" -> "obj"
-        | x -> x
-
     let rec toSynPat p = 
         match p with 
         | Pat.LongIdent (a, b, c, d, e) -> SynPat.LongIdent (a, b, c, d, e, range0)
@@ -56,6 +51,10 @@ module TreeOps =
     let rec toBinding b = 
         let (LetBind (accessibility, kind, mustInline, isMutable, attrs, valData, headPat, expr)) = b
         SynBinding.Binding (accessibility, kind, mustInline, isMutable, attrs, PreXmlDocEmpty, valData, toSynPat headPat, None, toSynExpr expr,range0, SequencePointAtBinding range0)
+
+    and toSynMatchExpr m = 
+        match m with 
+        | MatchClause.Clause (a,b,c) -> SynMatchClause.Clause (a, b |> Option.map toSynExpr,toSynExpr c,range0, SequencePointInfoForTarget.SequencePointAtTarget)
         
     and 
         toSynExpr (expr:Expr): SynExpr = 
@@ -77,6 +76,7 @@ module TreeOps =
         | Expr.Lambda (a,b,c,d) -> SynExpr.Lambda (a,b,c, toSynExpr d, range0)  //of  fromMethod:bool * inLambdaSeq:bool * args:SynSimplePats * body:Expr
 
         //| Assert of expr:Expr
+        | Expr.Match (a,b,c,d) -> SynExpr.Match (a,toSynExpr b,c |> List.map toSynMatchExpr, d, range0)
 
         | Expr.App (a,b,c,d) -> SynExpr.App (a,b, toSynExpr c, toSynExpr d, range0)
         | Expr.TypeApp (a,b) -> SynExpr.TypeApp (toSynExpr a, range0, b, [], None, range0, range0)
@@ -122,6 +122,11 @@ module TreeOps =
 
         | Expr.ReturnFromIf e -> toSynExpr e //SynExpr.Const (SynConst.Unit, range0)
 
+
+    type MatchOrAnd = 
+        | Value of Expr
+        | Or of Expr list
+    
     let rewriteReturnInIf tree = 
 
         let rec isReturnFrom = function 
@@ -163,8 +168,197 @@ module TreeOps =
                 let d = walker d
                 Expr.App (a,b,c,d)
 
-            //| Expr.ForEach (a,b,c,d,e,f) -> 
-                //Expr.ForEach (a,b,c,d, walker e, walker f)
+            | Expr.ForEach (a,b,c,d,e,f) -> 
+                Expr.ForEach (a,b,c,d, walker e, walker f)
+
+            | Expr.Match (a,b,c,d) -> 
+                let c = c |> List.map (fun (MatchClause.Clause (a,b,c)) -> MatchClause.Clause (a,b, removeReturn c))
+                Expr.Match (a,walker b,c,d)
+            | _ -> tree
+        walker tree
+
+    let rec containsExpr f tree = 
+        let containsExpr = containsExpr f
+        match tree with 
+        | Expr.Sequential (s1,s2,s3,s4) -> 
+            containsExpr s3 || containsExpr s4
+
+        | Expr.IfThenElse (a,b,c,d,e) -> containsExpr a || containsExpr b
+
+        | Expr.App (a,b,c,d) -> 
+            containsExpr c || containsExpr d
+
+        | Expr.ForEach (a,b,c,d,e,f) -> 
+            containsExpr e || containsExpr f
+
+        | Expr.Match (a,b,c,d) -> 
+            c |> List.map (fun (MatchClause.Clause (a,b,c)) -> containsExpr c) |> List.reduce (||)
+
+        | x when f x -> true
+        | _ -> false
+    
+
+    let rec rewriteMatchIs tree = 
+        //let whenAnd x y = 
+            //match x,y with 
+            //| Some (MatchOrAnd.Value x), Some (MatchOrAnd.Value y) -> 
+            //    let e = Expr.App(ExprAtomicFlag.NonAtomic, true, Expr.Ident "op_BooleanAnd", y)
+            //    (Expr.App(ExprAtomicFlag.NonAtomic, false, e, x)) |> MatchOrAnd.Value |> Some
+            //| Some (MatchOrAnd.Value x), Some (MatchOrAnd.Or y) ->  x::y |> MatchOrAnd.Or |> Some
+            //| Some (MatchOrAnd.Or y), Some (MatchOrAnd.Value x) ->  x::y |> MatchOrAnd.Or |> Some
+            //| Some (MatchOrAnd.Or x), Some (MatchOrAnd.Or y) ->  x @ y |> MatchOrAnd.Or |> Some
+            //| Some x, None -> Some x
+            //| None, Some x -> Some x
+            //| None, None -> None
+
+        let whenAnd x y = 
+            match x,y with 
+            | Some x, Some y -> 
+                let e = Expr.App(ExprAtomicFlag.NonAtomic, true, Expr.Ident "op_BooleanAnd", x)
+                (Expr.App(ExprAtomicFlag.NonAtomic, false, e, y)) |> Some
+            //| Some (MatchOrAnd.Value x), Some (MatchOrAnd.Or y) ->  x::y |> MatchOrAnd.Or |> Some
+            //| Some (MatchOrAnd.Or y), Some (MatchOrAnd.Value x) ->  x::y |> MatchOrAnd.Or |> Some
+            //| Some (MatchOrAnd.Or x), Some (MatchOrAnd.Or y) ->  x @ y |> MatchOrAnd.Or |> Some
+            | Some x, None -> Some x
+            | None, Some x -> Some x
+            | None, None -> None
+            
+
+        let rec removeMatchPlaceholder testExpr whenExpr firstResult secondResult (walker, a,b,c,d,e) = 
+
+            match testExpr with 
+            | Expr.Match (f,g,h,i) -> 
+                let h = 
+                    match h with 
+                    | MatchClause.Clause(j,None,_)::[] -> 
+                        match secondResult with 
+                        | Some secondResult -> 
+                            [ 
+                                MatchClause.Clause(j,None,firstResult); 
+                                MatchClause.Clause(SynPat.Wild range0,None, secondResult); 
+                            ]
+                        | None -> 
+                            [
+                                MatchClause.Clause(j,None,firstResult); 
+                                MatchClause.Clause(SynPat.Wild range0,None, Expr.Const SynConst.Unit); ]
+
+                Expr.Match (f,g,h,i)
+            | Expr.App (f,g,h,i) -> 
+                match h,i with 
+                | Expr.Ident x, Expr.Match _ when x = "not"  -> 
+                    removeMatchPlaceholder i whenExpr
+                        (match secondResult with | Some x -> x | None -> Expr.Const SynConst.Unit) (Some firstResult)
+                        (walker, a,b,c,d,e)
+                | Expr.Ident x, _ when x = "op_BooleanOr" -> 
+                    match removeMatchPlaceholder i [] firstResult secondResult (walker, a,b,c,d,e) with 
+                    | Expr.Match (f,g,h,i) -> 
+
+                        let h = 
+                            match h |> List.rev with 
+                            | MatchClause.Clause(_, None, secondResult)::MatchClause.Clause(j,None, firstResult)::[] -> 
+
+                                let whenOr = whenExpr |> List.choose id |> List.map (fun orExp -> MatchClause.Clause(j,Some orExp, secondResult) )
+                                let baseChecks = 
+                                    [   
+                                        MatchClause.Clause(j,None,firstResult); 
+                                        MatchClause.Clause(SynPat.Wild range0,None, secondResult); 
+                                    ]
+
+                                whenOr @ baseChecks
+                            
+                                //let xs = 
+                                //    xs |> List.map (fun (MatchClause.Clause(j,_,firstResult)) -> 
+                                //        whenExpr |> List.choose id |> List.map (fun orExp -> MatchClause.Clause(j,Some orExp, firstResult) ) )
+                                //    |> List.concat
+
+                                //x :: xs |> List.rev
+                            | MatchClause.Clause(_, None, secondResult)::MatchClause.Clause(j,None, firstResult)::xs -> 
+
+                                let ys = 
+                                        xs |> List.map (fun (_) -> 
+                                            whenExpr |> List.choose id |> List.map (fun orExp -> MatchClause.Clause(j,Some orExp, secondResult) ) )
+                                        |> List.concat
+
+                                let baseChecks = 
+                                    [   
+                                        MatchClause.Clause(j,None,firstResult); 
+                                        MatchClause.Clause(SynPat.Wild range0,None, secondResult); 
+                                    ]
+                                xs @ ys @ baseChecks
+                            | [] -> []
+
+                        Expr.Match (f,g,h,i)
+                    | e -> e
+                | Expr.Ident x, _ when x = "op_BooleanAnd" -> 
+                    match removeMatchPlaceholder i [] firstResult secondResult (walker, a,b,c,d,e) with 
+                    | Expr.Match (f,g,h,i) -> 
+
+                        let h = 
+                            match h with 
+                            | MatchClause.Clause(j,k,firstResult)::MatchClause.Clause(m,n,secondResult)::[] -> 
+                            
+                                match whenExpr |> List.map (whenAnd k) with 
+                                | x::[] -> 
+                                    [   MatchClause.Clause(j, x, firstResult); 
+                                        MatchClause.Clause(SynPat.Wild range0,None, secondResult); 
+                                    ]
+                                | _ -> 
+                                    [MatchClause.Clause(j,k,firstResult); MatchClause.Clause(m,n,secondResult) ]
+                        Expr.Match (f,g,h,i)
+                    | e -> e
+
+                | Expr.App (j,k,l,m), Expr.App _ -> 
+
+                    if (containsExpr (function | Expr.MatchIsPlaceholder -> true | _ -> false) h) then 
+                        let whenExpr = 
+                            match l, whenExpr with 
+                            | Expr.Ident x, [] -> [Some i] 
+                            | Expr.Ident x, whenExpr when x = "op_BooleanAnd" -> whenExpr |> List.map (whenAnd (Some i)) 
+                            | Expr.Ident x, whenExpr when x = "op_BooleanOr" -> Some i :: whenExpr
+
+                        removeMatchPlaceholder h whenExpr firstResult secondResult (walker, a,b,c,d,e)
+                    else 
+
+                        let a = walker a
+                        let b = walker b
+                        let c = c |> Option.map walker
+                        Expr.IfThenElse (a,b,c,d,e)
+
+            | _ -> 
+                //removeMatchPlaceholder c
+                //,removeMatchPlaceholder s4)
+
+                //rewriteMatchIs
+                let a = walker a
+                let b = walker b
+                let c = c |> Option.map walker
+                Expr.IfThenElse (a,b,c,d,e)
+        
+
+        let rec walker tree = 
+            match tree with 
+            | Expr.Sequential (s1,s2,s3,s4) -> 
+                Expr.Sequential (s1,s2,walker s3,walker s4)
+
+            | Expr.IfThenElse (a,b,c,d,e) -> 
+
+                if (containsExpr (function | Expr.MatchIsPlaceholder -> true | _ -> false) a) then 
+                    removeMatchPlaceholder a [] b c (walker, a,b,c,d,e)
+
+                else 
+                    let a = walker a
+                    let b = walker b
+                    let c = c |> Option.map walker
+                    Expr.IfThenElse (a,b,c,d,e)
+
+            | Expr.App (a,b,c,d) -> 
+
+                let c = walker c
+                let d = walker d
+                Expr.App (a,b,c,d)
+
+            | Expr.ForEach (a,b,c,d,e,f) -> 
+                Expr.ForEach (a,b,c,d, walker e, walker f)
             | _ -> tree
         walker tree
 

@@ -50,6 +50,9 @@ and
         headPat:Pat *
         expr:Expr
 
+and MatchClause = 
+    | Clause of Item1:SynPat * Item2:Expr option * Item3:Expr
+
 and
     [<NoEquality; NoComparison;RequireQualifiedAccess>]
      Expr  = 
@@ -110,7 +113,7 @@ and
     //| MatchLambda of isExnMatch:bool * range * SynMatchClause list * matchSeqPoint:SequencePointInfoForBinding
 
     ///// F# syntax: match expr with pat1 -> expr | ... | patN -> exprN
-    //| Match of  matchSeqPoint:SequencePointInfoForBinding * expr:Expr * clauses:SynMatchClause list * isExnMatch:bool (* bool indicates if this is an exception match in a computation expression which throws unmatched exceptions *)
+    | Match of  matchSeqPoint:SequencePointInfoForBinding * expr:Expr * clauses:MatchClause list * isExnMatch:bool (* bool indicates if this is an exception match in a computation expression which throws unmatched exceptions *)
 
     ///// F# syntax: do expr
     //| Do of  expr:Expr
@@ -259,7 +262,7 @@ and
 
     | InLetPlaceholder
 
-
+    | MatchIsPlaceholder
     | ReturnFromIf of Expr
 
 
@@ -274,7 +277,7 @@ module Line =
 
 
 type Parameter = {
-    Type:string
+    Type:SynType
     Name:string
 }
 

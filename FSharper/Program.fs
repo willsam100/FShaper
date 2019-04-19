@@ -17,9 +17,10 @@ let main argv =
     let printFsharpTree = true
     let input = 
              """type Foo =
-                    member this.Dispose() = 
-                        FooBar()
-                    //interface IDisposable  """ // Add expected F# syntax here
+                    member this.Dispose(item) = 
+                        match item with 
+                        | :? CodeFixMenu as itemAsMenu -> ()
+                        | _ -> () """ // Add expected F# syntax here
 
     if printFsharpTree then 
 

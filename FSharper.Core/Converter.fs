@@ -62,8 +62,7 @@ module FormatOuput =
             let typeArgs = 
                 x.Parameters |> List.map (fun x -> 
                     SynPat.Typed (
-                        SynPat.Named (SynPat.Wild range0, Ident(x.Name, range0), false, None, range0),
-                        SynType.LongIdent ( x.Type |> fixKeywords |> toLongIdentWithDots),  
+                        SynPat.Named (SynPat.Wild range0, Ident(x.Name, range0), false, None, range0), x.Type,  
                         range0) )
             SynPat.Paren (SynPat.Tuple (typeArgs, range0), range0)
 
@@ -80,11 +79,12 @@ module FormatOuput =
                         | Some x -> toSynExpr x
                 }
             )
-            
+
         let trandformedTree = 
             x.Body 
-            |> replaceDotGetIfNotInLetBinding
             |> rewriteReturnInIf 
+            |> rewriteMatchIs
+            |> replaceDotGetIfNotInLetBinding
             |> rewriteInLetExp 
             |> wrapNewKeyword
             |> rewriteMethodWithPrefix methodNames
@@ -313,8 +313,7 @@ module FormatOuput =
                             SynSimplePat.Typed
                                 (SynSimplePat.Id 
                                     (toSingleIdent x.Name, None, 
-                                    false, false, false, range0), 
-                                toLongIdentWithDots x.Type |> SynType.LongIdent, range0) )
+                                    false, false, false, range0), x.Type, range0) )
                     SynMemberDefn.ImplicitCtor (None,[], classArgs, None, range0) )
                     
                 |> function 
