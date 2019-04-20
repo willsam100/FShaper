@@ -6,6 +6,8 @@
 namespace FSharper.Core
 open Microsoft.FSharp.Compiler.Ast
 
+
+
 [<NoEquality; NoComparison;RequireQualifiedAccess>]
 type Pat =
     | Const of SynConst
@@ -262,9 +264,21 @@ and
 
     | InLetPlaceholder
 
-    | MatchIsPlaceholder
+    | CsharpIsMatch of Expr:Expr * first:SynPat * second:SynPat
     | ReturnFromIf of Expr
 
+module MatchClause = 
+    open Microsoft.FSharp.Compiler.Range
+
+    let getPat (MatchClause.Clause(j,_,_)) = j
+    let wild result = MatchClause.Clause(SynPat.Wild range0, None, result);
+
+module Expr = 
+
+    let mapClauses f m =
+        match m with 
+        | (Expr.Match(a,b,c,d)) -> (Expr.Match(a,b, f c,d))
+        | e -> e
 
 
 type Line = 

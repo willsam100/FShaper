@@ -14,7 +14,8 @@ type TestClass () =
         |> (fun s -> 
             s
                 .Replace("\n    \n", "\n\n")
-                .Replace("\n            \n", "\n\n") )
+                .Replace("\n            \n", "\n\n")
+                .Trim() )
 
 
     [<Test>]
@@ -966,6 +967,201 @@ type TestClass () =
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert C# is statement with name binding nested if statement using logical OR and logical AND`` () = 
+        let csharp = 
+             """public void Foo(object item)
+                {
+                    if (!(item is CodeFixMenu itemAsMenu) || itemAsMenu.Items == null && itemAsMenu.Items.Count <= 0) 
+                    {
+                        menuItem.Sensitive = false;
+                    }
+                }"""
+
+        let fsharp = 
+             """member this.Foo(item: obj) =
+                    match item with
+                    | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items = null && itemAsMenu.Items.Count <= 0 ->
+                        menuItem.Sensitive <- False
+                    | :? CodeFixMenu as itemAsMenu -> ()
+                    | _ -> menuItem.Sensitive <- False"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert C# is statement with two name bindings`` () = 
+        let csharp = 
+             """public void Foo(object item)
+                {
+                    if ((item is CodeFixMenu itemAsMenu) || (item is CodeFixSubMenu itemAsSubMenu) && itemAsSubMenu.Items.Count <= 0) 
+                    {
+                        menuItem.Sensitive = true;
+                    }
+                }"""
+
+        let fsharp = 
+             """member this.Foo(item: obj) =
+                    match item with
+                    | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items = null && itemAsMenu.Items.Count <= 0 ->
+                        menuItem.Sensitive <- False
+                    | :? CodeFixMenu as itemAsMenu -> ()
+                    | _ -> menuItem.Sensitive <- False"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert C# is constant type statement `` () = 
+        let csharp = 
+             """if (item is null)
+                    return false;
+                else 
+                    return true;"""
+
+        let fsharp = 
+             """match item with
+                    | null -> False
+                    | _ -> True"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+        
+    [<Test>]
+    member this.``convert C# is constant const statement `` () = 
+        let csharp = 
+             """if (item is "o")
+                    return "a";
+                else 
+                    return "b";"""
+
+        let fsharp = 
+             """match item with
+                    | "o" -> "a"
+                    | _ -> "b" """
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)  
+
+    [<Test>]
+    member this.``convert C# is constant value statement `` () = 
+        let csharp = 
+             """if (item is var x)
+                    return "a";
+                else 
+                    return "b";"""  // C# should warn that the else block is impossible to reach. 
+
+        let fsharp = 
+             """match item with
+                    | x -> "a"
+                    | _ -> "b" """ // FSharp will warn this code is impossible to reach.
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)  
+
+    [<Test>]
+    member this.``convert C# precondition and is pattern match`` () = 
+        let csharp = 
+             """public void Foo(object item)
+                {
+                    if (item != null && (item is CodeFixMenu itemAsMenu))
+                    {
+                        return itemAsMenu;
+                    }
+                    return null;
+                }"""
+
+        let fsharp = 
+             """member this.Foo(item: obj) =
+                    if item <> null then
+                        match item with
+                        | :? CodeFixMenu as itemAsMenu -> itemAsMenu
+                        | _ -> null
+                    else null"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+        
+    [<Test>]
+    member this.``convert C# precondition and is pattern match NOT`` () = 
+        let csharp = 
+             """public void Foo(object item)
+                {
+                    if (!item.Foo && (item is CodeFixMenu itemAsMenu))
+                    {
+                        return itemAsMenu;
+                    }
+                    return null;
+                }"""
+
+        let fsharp = 
+             """member this.Foo(item: obj) =
+                    if not item.Foo then
+                        match item with
+                        | :? CodeFixMenu as itemAsMenu -> itemAsMenu
+                        | _ -> null
+                    else null"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)   
+
+    [<Test>]
+    member this.``convert C# precondition and is pattern match OR`` () = 
+        let csharp = 
+             """public void Foo(object item)
+                {
+                    if (item.Bar || (item is CodeFixMenu itemAsMenu))
+                    {
+                        return item.Bar;
+                    }
+                    return null;
+                }"""
+
+        let fsharp = 
+             """member this.Foo(item: obj) =
+                    if item.Bar then item.Bar
+                    else
+                        match item with
+                        | :? CodeFixMenu as itemAsMenu -> item.Bar
+                        | _ -> null"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)   
+
+
+    [<Test>]
+    member this.``convert C# precondition and is pattern match OR with AND`` () = 
+        let csharp = 
+             """public void Foo(object item)
+                {
+                    if (item.Bar || (item is CodeFixMenu itemAsMenu) && itemAsMenu.Items.Count <= 0 )
+                    {
+                        return item.Bar;
+                    }
+                    return null;
+                }"""
+
+        let fsharp = 
+             """member this.Foo(item: obj) =
+                    if item.Bar then item.Bar
+                    else
+                        match item with
+                        | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items.Count <= 0 -> item.Bar
+                        | _ -> null"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)   
+
 
     // TODO: this test sis currently failing. 
     //[<Test>]
