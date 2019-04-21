@@ -17,7 +17,6 @@ type TestClass () =
                 .Replace("\n            \n", "\n\n")
                 .Trim() )
 
-
     [<Test>]
     member this.``using statements convert to open statements`` () = 
         """using MvvmCross.Forms.Views;
@@ -101,7 +100,7 @@ type TestClass () =
                 }"""
 
         let fsharp = 
-            """[<Activity(Label = "Activity A", MainLauncher = True)>]
+            """[<Activity(Label = "Activity A", MainLauncher = true)>]
                 type MainApplication(javaReference: IntPtr, transfer: JniHandleOwnership) =
                     inherit MvxAndroidApplication(javaReference, transfer)"""
                    
@@ -234,7 +233,7 @@ type TestClass () =
                     let mutable pendingIntent = PendingIntent.GetActivity(this, 0, intent, PendingIntentFlags.OneShot)
                     let mutable notificationBuilder =
                         new Notification.Builder(this).SetContentTitle("FCM Message").SetSmallIcon(Resource.Drawable.ic_launcher)
-                            .SetContentText(messageBody).SetAutoCancel(True).SetContentIntent(pendingIntent)
+                            .SetContentText(messageBody).SetAutoCancel(true).SetContentIntent(pendingIntent)
                     let mutable notificationManager = NotificationManager.FromContext(this)
                     notificationManager.Notify(0, notificationBuilder.Build())"""
                    
@@ -265,12 +264,12 @@ type TestClass () =
         let csharp = 
              """ContextMenu CreateContextMenu (CodeFixMenu entrySet)
                 {
-                    menuItem.Clicked += (sender, e) => sender.Foo();
+                    _menuItem.Clicked += (sender, e) => sender.Foo();
                 }"""
 
         let fsharp = 
              """member this.CreateContextMenu(entrySet: CodeFixMenu) =
-                    menuItem.Clicked.AddHandler<_> (fun (sender, e) -> sender.Foo())"""
+                    _menuItem.Clicked.AddHandler<_> (fun (sender, e) -> sender.Foo())"""
                    
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
@@ -403,7 +402,7 @@ type TestClass () =
                 } """
 
         let fsharp = 
-             """[<Activity(Label = "Activity A", MainLauncher = True)>]
+             """[<Activity(Label = "Activity A", MainLauncher = true)>]
                 type MainApplication(javaReference: IntPtr, transfer: JniHandleOwnership) =
                     inherit MvxAndroidApplication(javaReference, transfer)"""
                        
@@ -446,10 +445,10 @@ type TestClass () =
                         else
                             msgText.Text <- "This device is not supported"
                             Finish()
-                        False
+                        false
                     else
                         msgText.Text <- "Google Play Services is available."
-                        True"""
+                        true"""
                        
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
@@ -626,7 +625,7 @@ type TestClass () =
                 open System
                 open System.Collections.Specialized
 
-                [<Android.Runtime.Preserve(AllMembers = True)>]
+                [<Android.Runtime.Preserve(AllMembers = true)>]
                 type LinkerPleaseInclude() =
                     member this.Include(button: Button) = button.Click.AddHandler<_> (fun (s, e) -> button.Text <- button.Text + "")
                     member this.Include(checkBox: CheckBox) =
@@ -862,307 +861,6 @@ type TestClass () =
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
 
-    [<Test>]
-    member this.``convert C# is statement with name binding`` () = 
-        let csharp = 
-             """public CodeFixMenu Foo(object item)
-                {
-                    if (item is CodeFixMenu itemAsMenu)
-                    {
-                        return itemAsMenu;
-                    }
-                    return null;
-                }"""
-
-        let fsharp = 
-             """member this.Foo(item: obj) =
-                    match item with
-                    | :? CodeFixMenu as itemAsMenu -> itemAsMenu
-                    | _ -> null"""
-
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
-
-    [<Test>]
-    member this.``convert C# is statement with name binding nested if statement using logical OR`` () = 
-        let csharp = 
-             """public void Foo(object item)
-                {
-                    if (!(item is CodeFixMenu itemAsMenu) || itemAsMenu.Items.Count <= 0) {
-                        menuItem.Sensitive = false;
-                    }
-                }"""
-
-        let fsharp = 
-             """member this.Foo(item: obj) =
-                    match item with
-                    | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items.Count <= 0 -> menuItem.Sensitive <- False
-                    | :? CodeFixMenu as itemAsMenu -> ()
-                    | _ -> menuItem.Sensitive <- False"""
-
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
-
-    [<Test>]
-    member this.``convert C# is statement with name binding nested if statement using logical AND`` () = 
-        let csharp = 
-             """public void Foo(object item)
-                {
-                    if ((item is CodeFixMenu itemAsMenu) && itemAsMenu.Items.Count > 0) {
-                        menuItem.Sensitive = true;
-                    }
-                }"""
-
-        let fsharp = 
-             """member this.Foo(item: obj) =
-                    match item with
-                    | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items.Count > 0 -> menuItem.Sensitive <- True
-                    | _ -> ()"""
-
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
-
-    [<Test>]
-    member this.``convert C# is statement with name binding nested if statement using logical AND twice`` () = 
-        let csharp = 
-             """public void Foo(object item)
-                {
-                    if ((item is CodeFixMenu itemAsMenu) && itemAsMenu.Items != null && itemAsMenu.Items.Count > 0) {
-                        menuItem.Sensitive = true;
-                    }
-                }"""
-
-        let fsharp = 
-             """member this.Foo(item: obj) =
-                    match item with
-                    | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items <> null && itemAsMenu.Items.Count > 0 ->
-                        menuItem.Sensitive <- True
-                    | _ -> ()"""
-
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
-
-    [<Test>]
-    member this.``convert C# is statement with name binding nested if statement using logical OR twice`` () = 
-        let csharp = 
-             """public void Foo(object item)
-                {
-                    if (!(item is CodeFixMenu itemAsMenu) || itemAsMenu.Items == null || itemAsMenu.Items.Count <= 0) {
-                        menuItem.Sensitive = false;
-                    }
-                }"""
-
-        let fsharp = 
-             """member this.Foo(item: obj) =
-                    match item with
-                    | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items = null -> menuItem.Sensitive <- False
-                    | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items.Count <= 0 -> menuItem.Sensitive <- False
-                    | :? CodeFixMenu as itemAsMenu -> ()
-                    | _ -> menuItem.Sensitive <- False"""
-
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
-
-    [<Test>]
-    member this.``convert C# is statement with name binding nested if statement using logical OR and logical AND`` () = 
-        let csharp = 
-             """public void Foo(object item)
-                {
-                    if (!(item is CodeFixMenu itemAsMenu) || itemAsMenu.Items == null && itemAsMenu.Items.Count <= 0) 
-                    {
-                        menuItem.Sensitive = false;
-                    }
-                }"""
-
-        let fsharp = 
-             """member this.Foo(item: obj) =
-                    match item with
-                    | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items = null && itemAsMenu.Items.Count <= 0 ->
-                        menuItem.Sensitive <- False
-                    | :? CodeFixMenu as itemAsMenu -> ()
-                    | _ -> menuItem.Sensitive <- False"""
-
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
-
-    [<Test>]
-    member this.``convert C# is statement with two name bindings`` () = 
-        let csharp = 
-             """public void Foo(object item)
-                {
-                    if ((item is CodeFixMenu itemAsMenu) || (item is CodeFixSubMenu itemAsSubMenu) && itemAsSubMenu.Items.Count <= 0) 
-                    {
-                        menuItem.Sensitive = true;
-                    }
-                }"""
-
-        let fsharp = 
-             """member this.Foo(item: obj) =
-                    match item with
-                    | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items = null && itemAsMenu.Items.Count <= 0 ->
-                        menuItem.Sensitive <- False
-                    | :? CodeFixMenu as itemAsMenu -> ()
-                    | _ -> menuItem.Sensitive <- False"""
-
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
-
-    [<Test>]
-    member this.``convert C# is constant type statement `` () = 
-        let csharp = 
-             """if (item is null)
-                    return false;
-                else 
-                    return true;"""
-
-        let fsharp = 
-             """match item with
-                    | null -> False
-                    | _ -> True"""
-
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
-        
-    [<Test>]
-    member this.``convert C# is constant const statement `` () = 
-        let csharp = 
-             """if (item is "o")
-                    return "a";
-                else 
-                    return "b";"""
-
-        let fsharp = 
-             """match item with
-                    | "o" -> "a"
-                    | _ -> "b" """
-
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)  
-
-    [<Test>]
-    member this.``convert C# is constant value statement `` () = 
-        let csharp = 
-             """if (item is var x)
-                    return "a";
-                else 
-                    return "b";"""  // C# should warn that the else block is impossible to reach. 
-
-        let fsharp = 
-             """match item with
-                    | x -> "a"
-                    | _ -> "b" """ // FSharp will warn this code is impossible to reach.
-
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)  
-
-    [<Test>]
-    member this.``convert C# precondition and is pattern match`` () = 
-        let csharp = 
-             """public void Foo(object item)
-                {
-                    if (item != null && (item is CodeFixMenu itemAsMenu))
-                    {
-                        return itemAsMenu;
-                    }
-                    return null;
-                }"""
-
-        let fsharp = 
-             """member this.Foo(item: obj) =
-                    if item <> null then
-                        match item with
-                        | :? CodeFixMenu as itemAsMenu -> itemAsMenu
-                        | _ -> null
-                    else null"""
-
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
-        
-    [<Test>]
-    member this.``convert C# precondition and is pattern match NOT`` () = 
-        let csharp = 
-             """public void Foo(object item)
-                {
-                    if (!item.Foo && (item is CodeFixMenu itemAsMenu))
-                    {
-                        return itemAsMenu;
-                    }
-                    return null;
-                }"""
-
-        let fsharp = 
-             """member this.Foo(item: obj) =
-                    if not item.Foo then
-                        match item with
-                        | :? CodeFixMenu as itemAsMenu -> itemAsMenu
-                        | _ -> null
-                    else null"""
-
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)   
-
-    [<Test>]
-    member this.``convert C# precondition and is pattern match OR`` () = 
-        let csharp = 
-             """public void Foo(object item)
-                {
-                    if (item.Bar || (item is CodeFixMenu itemAsMenu))
-                    {
-                        return item.Bar;
-                    }
-                    return null;
-                }"""
-
-        let fsharp = 
-             """member this.Foo(item: obj) =
-                    if item.Bar then item.Bar
-                    else
-                        match item with
-                        | :? CodeFixMenu as itemAsMenu -> item.Bar
-                        | _ -> null"""
-
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)   
-
-
-    [<Test>]
-    member this.``convert C# precondition and is pattern match OR with AND`` () = 
-        let csharp = 
-             """public void Foo(object item)
-                {
-                    if (item.Bar || (item is CodeFixMenu itemAsMenu) && itemAsMenu.Items.Count <= 0 )
-                    {
-                        return item.Bar;
-                    }
-                    return null;
-                }"""
-
-        let fsharp = 
-             """member this.Foo(item: obj) =
-                    if item.Bar then item.Bar
-                    else
-                        match item with
-                        | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items.Count <= 0 -> item.Bar
-                        | _ -> null"""
-
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)   
-
-
     // TODO: this test sis currently failing. 
     //[<Test>]
     //member this.``convert continue and foreach loop`` () = 
@@ -1176,31 +874,31 @@ type TestClass () =
         //                    continue;
         //                }
 
-        //                var menuItem = new ContextMenuItem (item.Label);
-        //                menuItem.Context = item.Action;
+        //                var _menuItem = new ContextMenuItem (item.Label);
+        //                _menuItem.Context = item.Action;
         //                if (item.Action == null) {
         //                    if (!(item is CodeFixMenu itemAsMenu) || itemAsMenu.Items.Count <= 0) {
-        //                        menuItem.Sensitive = false;
+        //                        _menuItem.Sensitive = false;
         //                    }
         //                }
         //                var subMenu = item as CodeFixMenu;
         //                if (subMenu != null) {
-        //                    menuItem.SubMenu = CreateContextMenu (subMenu);
-        //                    menuItem.Selected += delegate {
+        //                    _menuItem.SubMenu = CreateContextMenu (subMenu);
+        //                    _menuItem.Selected += delegate {
         //                        RefactoringPreviewTooltipWindow.HidePreviewTooltip ();
         //                    };
-        //                    menuItem.Deselected += delegate { RefactoringPreviewTooltipWindow.HidePreviewTooltip (); };
+        //                    _menuItem.Deselected += delegate { RefactoringPreviewTooltipWindow.HidePreviewTooltip (); };
         //                } else {
-        //                    menuItem.Clicked += (sender, e) => ((System.Action)((ContextMenuItem)sender).Context) ();
-        //                    menuItem.Selected += (sender, e) => {
+        //                    _menuItem.Clicked += (sender, e) => ((System.Action)((ContextMenuItem)sender).Context) ();
+        //                    _menuItem.Selected += (sender, e) => {
         //                        RefactoringPreviewTooltipWindow.HidePreviewTooltip ();
         //                        if (item.ShowPreviewTooltip != null) {
         //                            item.ShowPreviewTooltip (e);
         //                        }
         //                    };
-        //                    menuItem.Deselected += delegate { RefactoringPreviewTooltipWindow.HidePreviewTooltip (); };
+        //                    _menuItem.Deselected += delegate { RefactoringPreviewTooltipWindow.HidePreviewTooltip (); };
         //                }
-        //                menu.Items.Add (menuItem);
+        //                menu.Items.Add (_menuItem);
         //            }
         //            menu.Closed += delegate { RefactoringPreviewTooltipWindow.HidePreviewTooltip (); };
         //            return menu;
@@ -1215,29 +913,32 @@ type TestClass () =
         //                        .Add(new SeparatorContextMenuItem())
         //                    ()
         //                else
-        //                    let mutable menuItem = new ContextMenuItem(item.Label)
-        //                    menuItem.Context <- item.Action
+        //                    let mutable _menuItem = new ContextMenuItem(item.Label)
+        //                    _menuItem.Context <- item.Action
         //                    if item.Action = null then
-        //                        if not ParenthesizedExpressionSyntax || itemAsMenu.Items.Count <= 0 then menuItem.Sensitive <- False
+        //                        if not ParenthesizedExpressionSyntax || itemAsMenu.Items.Count <= 0 then _menuItem.Sensitive <- false
         //                    else
         //                        let mutable subMenu = item :?> CodeFixMenu
         //                        if subMenu <> null then
-        //                            menuItem.SubMenu <- CreateContextMenu(subMenu)
-        //                            menuItem.Selected.AddHandler<_> (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
-        //                            menuItem.Deselected.AddHandler<_>
+        //                            _menuItem.SubMenu <- CreateContextMenu(subMenu)
+        //                            _menuItem.Selected.AddHandler<_> (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
+        //                            _menuItem.Deselected.AddHandler<_>
         //                                (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
         //                        else
-        //                            menuItem.Clicked.AddHandler<_> (fun (sender, e) -> ParenthesizedExpressionSyntax())
-        //                            menuItem.Selected.AddHandler<_> (fun (sender, e) ->
+        //                            _menuItem.Clicked.AddHandler<_> (fun (sender, e) -> ParenthesizedExpressionSyntax())
+        //                            _menuItem.Selected.AddHandler<_> (fun (sender, e) ->
         //                                RefactoringPreviewTooltipWindow.HidePreviewTooltip()
         //                                if item.ShowPreviewTooltip <> null then item.ShowPreviewTooltip(e))
-        //                            menuItem.Deselected.AddHandler<_>
+        //                            _menuItem.Deselected.AddHandler<_>
         //                                (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
         //                        menu.Items
-        //                            .Add(menuItem)
+        //                            .Add(_menuItem)
         //            menu.Closed.AddHandler<_> (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
         //            menu"""
                    
         //csharp |> Converter.run 
         //|> (fun x -> printfn "%s" x; x)
         //|> should equal (formatFsharp fsharp)
+
+        
+        

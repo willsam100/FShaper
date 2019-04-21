@@ -239,8 +239,8 @@ type CSharpStatementWalker() =
         | SyntaxKind.TypeOfKeyword -> "TypeOf" |> toLongIdent
         | SyntaxKind.SizeOfKeyword -> "SizeOf" |> toLongIdent
         | SyntaxKind.NullKeyword -> Expr.Null
-        | SyntaxKind.TrueKeyword -> "True" |> toLongIdent
-        | SyntaxKind.FalseKeyword -> "False" |> toLongIdent
+        | SyntaxKind.TrueKeyword -> SynConst.Bool true |> Expr.Const 
+        | SyntaxKind.FalseKeyword -> SynConst.Bool false |> Expr.Const
         | SyntaxKind.IfKeyword -> "If" |> toLongIdent
         | SyntaxKind.ElseKeyword -> "Else" |> toLongIdent
         | SyntaxKind.WhileKeyword -> "While" |> toLongIdent
@@ -602,7 +602,7 @@ type CSharpStatementWalker() =
                     let ident = createErorrCode x 
                     SynPat.LongIdent (ident, None, None, SynConstructorArgs.Pats [], None, range0)
 
-            Expr.CsharpIsMatch (expr, clause, SynPat.Wild range0 )
+            Expr.CsharpIsMatch (expr, clause )
 
         | :? IdentifierNameSyntax as x -> CSharpStatementWalker.ParseChsarpNode x
         | :? AnonymousFunctionExpressionSyntax as x -> 

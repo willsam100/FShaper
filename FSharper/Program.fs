@@ -18,9 +18,7 @@ let main argv =
     let input = 
              """type Foo =
                     member this.Dispose(item) = 
-                        match item with 
-                        | :? CodeFixMenu as itemAsMenu -> ()
-                        | _ -> () """ // Add expected F# syntax here
+                        x <> 56""" // Add expected F# syntax here
 
     if printFsharpTree then 
 

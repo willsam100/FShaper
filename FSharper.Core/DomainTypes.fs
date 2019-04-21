@@ -264,14 +264,34 @@ and
 
     | InLetPlaceholder
 
-    | CsharpIsMatch of Expr:Expr * first:SynPat * second:SynPat
+    | CsharpIsMatch of Expr:Expr * first:SynPat
     | ReturnFromIf of Expr
+
+type IfAsMatch = {
+    First: Expr
+    FirstClauses: Expr list
+    Second: Expr
+     
+}
 
 module MatchClause = 
     open Microsoft.FSharp.Compiler.Range
 
     let getPat (MatchClause.Clause(j,_,_)) = j
     let wild result = MatchClause.Clause(SynPat.Wild range0, None, result);
+
+    let getExpr (MatchClause.Clause(_,_,e)) = e
+    let mapExpr f (MatchClause.Clause(a,b, e)) = MatchClause.Clause(a, b, f e)
+
+    let isWild (MatchClause.Clause(p, _, _)) = match p with | SynPat.Wild _ -> true | _ -> false
+
+    let matchClauses f g c = 
+        match List.rev c with 
+        | x::MatchClause.Clause(h,whenExpr,first)::[] -> f h whenExpr first (getExpr x)
+        | x::y::xs -> g (getExpr y) (getExpr x) (x,y,xs)
+        | [e] -> [e]
+        | [] -> []
+        
 
 module Expr = 
 
