@@ -8,13 +8,13 @@ open System.Text.RegularExpressions
 [<EntryPoint>]
 let main argv =
 
-    //let input = System.Console.In.ReadToEnd()
-    //FSharper.Core.Converter.run input |> printfn "%s"
+    let input = System.Console.In.ReadToEnd()
+    FSharper.Core.Converter.run input |> printfn "%s"
 
 
     // Used for debugging/development. To see the the F# syntax, add here. 
     // the syntax can then be used to idently how to construct it from the CSharp syntax
-    let printFsharpTree = true
+    let printFsharpTree = false
     let input = 
              """type Foo =
                     member this.Dispose(item) = 

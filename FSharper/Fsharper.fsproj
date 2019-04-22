@@ -3,9 +3,9 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>netcoreapp2.1</TargetFramework>
     <PackAsTool>true</PackAsTool>
-    <ToolCommandName>cstofs</ToolCommandName>
+    <ToolCommandName>fsharper</ToolCommandName>
     <PackOnBuild>true</PackOnBuild>
-    <PackageId>CsToFs</PackageId>
+    <PackageId>FSharper</PackageId>
     <PackageVersion>1.0.0</PackageVersion>
     <Authors>Sam Williams</Authors>
     <Description>Carries out the heavy lifting of converting C# to F#</Description>
