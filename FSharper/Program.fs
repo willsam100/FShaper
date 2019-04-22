@@ -18,7 +18,7 @@ let main argv =
     let input = 
              """type Foo =
                     member this.Dispose(item) = 
-                        x <> 56""" // Add expected F# syntax here
+                        (foo :?> Action).Invoke ()""" // Add expected F# syntax here
 
     if printFsharpTree then 
 

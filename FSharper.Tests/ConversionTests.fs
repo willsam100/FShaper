@@ -854,91 +854,151 @@ type TestClass () =
         let fsharp = 
              """type Foo(oo: obj) =
                     member this.Foo(o: obj) =
-                        let mutable x = o :?> obj
+                        let mutable x = (o :?> obj)
                         ()"""
 
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
 
-    // TODO: this test sis currently failing. 
-    //[<Test>]
-    //member this.``convert continue and foreach loop`` () = 
-        //let csharp = 
-        //     """ContextMenu CreateContextMenu (CodeFixMenu entrySet)
-        //        {
-        //            var menu = new ContextMenu ();
-        //            foreach (var item in entrySet.Items) {
-        //                if (item == CodeFixMenuEntry.Separator) {
-        //                    menu.Items.Add (new SeparatorContextMenuItem ());
-        //                    continue;
-        //                }
+    [<Test>]
+    member this.``convert continue and foreach loop`` () = 
+        let csharp = 
+             """ContextMenu CreateContextMenu (CodeFixMenu entrySet)
+                {
+                    var menu = new ContextMenu ();
+                    foreach (var item in entrySet.Items) {
+                        if (item == CodeFixMenuEntry.Separator) {
+                            menu.Items.Add (new SeparatorContextMenuItem ());
+                            continue;
+                        }
 
-        //                var _menuItem = new ContextMenuItem (item.Label);
-        //                _menuItem.Context = item.Action;
-        //                if (item.Action == null) {
-        //                    if (!(item is CodeFixMenu itemAsMenu) || itemAsMenu.Items.Count <= 0) {
-        //                        _menuItem.Sensitive = false;
-        //                    }
-        //                }
-        //                var subMenu = item as CodeFixMenu;
-        //                if (subMenu != null) {
-        //                    _menuItem.SubMenu = CreateContextMenu (subMenu);
-        //                    _menuItem.Selected += delegate {
-        //                        RefactoringPreviewTooltipWindow.HidePreviewTooltip ();
-        //                    };
-        //                    _menuItem.Deselected += delegate { RefactoringPreviewTooltipWindow.HidePreviewTooltip (); };
-        //                } else {
-        //                    _menuItem.Clicked += (sender, e) => ((System.Action)((ContextMenuItem)sender).Context) ();
-        //                    _menuItem.Selected += (sender, e) => {
-        //                        RefactoringPreviewTooltipWindow.HidePreviewTooltip ();
-        //                        if (item.ShowPreviewTooltip != null) {
-        //                            item.ShowPreviewTooltip (e);
-        //                        }
-        //                    };
-        //                    _menuItem.Deselected += delegate { RefactoringPreviewTooltipWindow.HidePreviewTooltip (); };
-        //                }
-        //                menu.Items.Add (_menuItem);
-        //            }
-        //            menu.Closed += delegate { RefactoringPreviewTooltipWindow.HidePreviewTooltip (); };
-        //            return menu;
-        //        }"""
+                        var _menuItem = new ContextMenuItem (item.Label);
+                        _menuItem.Context = item.Action;
+                        if (item.Action == null) {
+                            if (!(item is CodeFixMenu itemAsMenu) || itemAsMenu.Items.Count <= 0) {
+                                _menuItem.Sensitive = false;
+                            }
+                        }
+                        var subMenu = item as CodeFixMenu;
+                        if (subMenu != null) {
+                            _menuItem.SubMenu = CreateContextMenu (subMenu);
+                            _menuItem.Selected += delegate {
+                                RefactoringPreviewTooltipWindow.HidePreviewTooltip ();
+                            };
+                            _menuItem.Deselected += delegate { RefactoringPreviewTooltipWindow.HidePreviewTooltip (); };
+                        } else {
+                            _menuItem.Clicked += (sender, e) => ((System.Action)((ContextMenuItem)sender).Context) ();
+                            _menuItem.Selected += (sender, e) => {
+                                RefactoringPreviewTooltipWindow.HidePreviewTooltip ();
+                                if (item.ShowPreviewTooltip != null) {
+                                    item.ShowPreviewTooltip (e);
+                                }
+                            };
+                            _menuItem.Deselected += delegate { RefactoringPreviewTooltipWindow.HidePreviewTooltip (); };
+                        }
+                        menu.Items.Add (_menuItem);
+                    }
+                    menu.Closed += delegate { RefactoringPreviewTooltipWindow.HidePreviewTooltip (); };
+                    return menu;
+                }"""
     
-        //let fsharp = 
-        //     """member this.CreateContextMenu(entrySet: CodeFixMenu) =
-        //            let mutable menu = new ContextMenu()
-        //            for item in entrySet.Items do
-        //                if item = CodeFixMenuEntry.Separator then
-        //                    menu.Items
-        //                        .Add(new SeparatorContextMenuItem())
-        //                    ()
-        //                else
-        //                    let mutable _menuItem = new ContextMenuItem(item.Label)
-        //                    _menuItem.Context <- item.Action
-        //                    if item.Action = null then
-        //                        if not ParenthesizedExpressionSyntax || itemAsMenu.Items.Count <= 0 then _menuItem.Sensitive <- false
-        //                    else
-        //                        let mutable subMenu = item :?> CodeFixMenu
-        //                        if subMenu <> null then
-        //                            _menuItem.SubMenu <- CreateContextMenu(subMenu)
-        //                            _menuItem.Selected.AddHandler<_> (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
-        //                            _menuItem.Deselected.AddHandler<_>
-        //                                (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
-        //                        else
-        //                            _menuItem.Clicked.AddHandler<_> (fun (sender, e) -> ParenthesizedExpressionSyntax())
-        //                            _menuItem.Selected.AddHandler<_> (fun (sender, e) ->
-        //                                RefactoringPreviewTooltipWindow.HidePreviewTooltip()
-        //                                if item.ShowPreviewTooltip <> null then item.ShowPreviewTooltip(e))
-        //                            _menuItem.Deselected.AddHandler<_>
-        //                                (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
-        //                        menu.Items
-        //                            .Add(_menuItem)
-        //            menu.Closed.AddHandler<_> (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
-        //            menu"""
+        let fsharp = 
+             """member this.CreateContextMenu(entrySet: CodeFixMenu) =
+                    let mutable menu = new ContextMenu()
+                    for item in entrySet.Items do
+                        if item = CodeFixMenuEntry.Separator then
+                            menu.Items
+                                .Add(new SeparatorContextMenuItem())
+                            ()
+                        else
+                            let mutable _menuItem = new ContextMenuItem(item.Label)
+                            _menuItem.Context <- item.Action
+                            if item.Action = null then
+                                match item with
+                                | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items.Count > 0 -> ()
+                                | _ -> _menuItem.Sensitive <- false
+                            else
+                                let mutable subMenu = item :?> CodeFixMenu
+                                if subMenu <> null then
+                                    _menuItem.SubMenu <- CreateContextMenu(subMenu)
+                                    _menuItem.Selected.AddHandler<_>
+                                        (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
+                                    _menuItem.Deselected.AddHandler<_>
+                                        (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
+                                else
+                                    _menuItem.Clicked.AddHandler<_>
+                                        (fun (sender, e) -> ((sender :?> ContextMenuItem).Context :?> System.Action).Invoke())
+                                    _menuItem.Selected.AddHandler<_> (fun (sender, e) ->
+                                        RefactoringPreviewTooltipWindow.HidePreviewTooltip()
+                                        if item.ShowPreviewTooltip <> null then item.ShowPreviewTooltip(e))
+                                    _menuItem.Deselected.AddHandler<_>
+                                        (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
+                                menu.Items
+                                    .Add(_menuItem)
+                    menu.Closed.AddHandler<_> (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
+                    menu"""
                    
-        //csharp |> Converter.run 
-        //|> (fun x -> printfn "%s" x; x)
-        //|> should equal (formatFsharp fsharp)
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
 
-        
-        
+    [<Test>]
+    member this.``convert invocation on cast to Action to Invoke()`` () = 
+        let csharp = 
+             """public void CreateContextMenu (object entrySet)
+                {
+                    ((Action)entrySet) ();
+                }"""
+    
+        let fsharp = 
+             """member this.CreateContextMenu(entrySet: obj) = (entrySet :?> Action).Invoke()"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp) 
+
+    [<Test>]
+    member this.``convert invocation on cast to Action args to invoke args`` () = 
+        let csharp = 
+             """public void CreateContextMenu (object entrySet)
+                {
+                    ((Action<int>)entrySet)(42);
+                }"""
+    
+        let fsharp = 
+             """member this.CreateContextMenu(entrySet: obj) = (entrySet :?> Action<int>).Invoke(42)"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp) 
+
+    [<Test>]
+    member this.``convert invocation on cast to Func to Invoke()`` () = 
+        let csharp = 
+             """public int CreateContextMenu (object entrySet)
+                {
+                    ((Func<int>)entrySet) ();
+                }"""
+    
+        let fsharp = 
+             """member this.CreateContextMenu(entrySet: obj) = (entrySet :?> Func<int>).Invoke()"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)   
+
+    [<Test>]
+    member this.``convert invocation on cast to Func args to Invoke args`` () = 
+        let csharp = 
+             """public int CreateContextMenu (object entrySet)
+                {
+                    return ((Func<int,int>)entrySet)(42);
+                }"""
+    
+        let fsharp = 
+             """member this.CreateContextMenu(entrySet: obj) = (entrySet :?> Func<int, int>).Invoke(42)"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)   

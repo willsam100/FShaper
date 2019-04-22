@@ -658,7 +658,7 @@ type CSharpStatementWalker() =
         | :? CastExpressionSyntax as x -> 
             let exp = CSharpStatementWalker.ParseExpression x.Expression
             let castType = ParserUtil.parseType x.Type
-            Expr.Downcast (exp, castType)
+            Expr.Downcast (exp, castType) |> Expr.Paren
 
         //| :? CheckedExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "CheckedExpressionSyntax"
         //| :? ConditionalAccessExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "ConditionalAccessExpressionSyntax"
@@ -714,12 +714,7 @@ type CSharpStatementWalker() =
                 |> Seq.toList
                 |> Expr.Tuple 
 
-            printfn "InvocationExpressionSyntax: %A" args
-            printfn "Expression: %A, %A" x.Expression (x.Expression.GetType())
-
             let name = x.Expression |> CSharpStatementWalker.ParseChsarpNode
-            printfn "Nmae: %A" name
-            printfn ""
             Expr.App (ExprAtomicFlag.NonAtomic, false, name, Expr.Paren args)
 
         //| :? IsPatternExpressionSyntax as x -> ()

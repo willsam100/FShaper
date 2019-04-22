@@ -49,6 +49,17 @@ module FormatOuput =
             Attributes = []
         }
 
+    let santizeCode methodNames expr = 
+            expr
+            |> simplifyTree
+            |> rewriteReturnInIf 
+            |> rewriteMatchIs
+            |> replaceDotGetIfNotInLetBinding
+            |> rewriteInLetExp 
+            |> wrapNewKeyword
+            |> rewriteMethodWithPrefix methodNames
+            |> rewriteActionOrFuncToUseCallInvoke
+
     let toMethod methodNames (x:Method) = 
         let methodName = LongIdentWithDots (toIdent ("this." + x.Name), [range0])
 
@@ -80,14 +91,7 @@ module FormatOuput =
                 }
             )
 
-        let trandformedTree = 
-            x.Body 
-            |> rewriteReturnInIf 
-            |> rewriteMatchIs
-            |> replaceDotGetIfNotInLetBinding
-            |> rewriteInLetExp 
-            |> wrapNewKeyword
-            |> rewriteMethodWithPrefix methodNames
+        let trandformedTree = santizeCode methodNames x.Body
         printfn "Transformed Tree:"
         printfn "%A" trandformedTree
 
@@ -132,6 +136,8 @@ module FormatOuput =
             }
 
         let makeGetter getter = 
+            let getter = santizeCode [] getter
+        
             let memberOptions = 
                 {   
                     IsInstance = true
@@ -159,6 +165,7 @@ module FormatOuput =
                         PreXmlDocEmpty, SynValData (Some memberOptions, synVaInfo, None), headPat, Some returnInfo, getter |> toSynExpr, range0, NoSequencePointAtInvisibleBinding), range0)   
 
         let makeSetter setter = 
+            let setter = santizeCode [] setter
             let memberOptions = 
                 {   
                     IsInstance = true

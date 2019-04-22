@@ -267,13 +267,6 @@ and
     | CsharpIsMatch of Expr:Expr * first:SynPat
     | ReturnFromIf of Expr
 
-type IfAsMatch = {
-    First: Expr
-    FirstClauses: Expr list
-    Second: Expr
-     
-}
-
 module MatchClause = 
     open Microsoft.FSharp.Compiler.Range
 
