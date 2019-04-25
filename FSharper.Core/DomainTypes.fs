@@ -6,7 +6,12 @@
 namespace FSharper.Core
 open Microsoft.FSharp.Compiler.Ast
 
-
+[<RequireQualifiedAccess>]
+module DefaultNames = 
+    let namespaceName = "Program35949ae4-3f6e-11e9-b4dc-230deb73e77f"
+    let className = "Klass067803f4-3f6e-11e9-b4df-6f8305ceb4a6"
+    let method = "Method156143763f6e11e984e11f16c4cfd728"
+    let file = "unknown.fs"
 
 [<NoEquality; NoComparison;RequireQualifiedAccess>]
 type Pat =
@@ -39,6 +44,10 @@ type Pat =
 
     /// A pattern arising from a parse error
     | FromParseError of SynPat
+
+and IndexerArg = 
+    | One of Expr
+    
 and 
     [<NoEquality;NoComparison>]
     FSharpBinding  = 
@@ -189,12 +198,12 @@ and
     | Set of Expr * Expr
 
     /// F# syntax: expr.[expr,...,expr]
-    | DotIndexedGet of Expr * SynIndexerArg list
+    | DotIndexedGet of Expr * IndexerArg list
 
     /// DotIndexedSet (objectExpr, indexExprs, valueExpr, rangeOfLeftOfSet, rangeOfDot, rangeOfWholeExpr)
     ///
     /// F# syntax: expr.[expr,...,expr] <- expr
-    | DotIndexedSet of objectExpr:Expr * indexExprs:SynIndexerArg list * valueExpr:Expr
+    | DotIndexedSet of objectExpr:Expr * indexExprs:IndexerArg list * valueExpr:Expr
 
     /// F# syntax: Type.Items(e1) <- e2 , rarely used named-property-setter notation, e.g. Foo.Bar.Chars(3) <- 'a'
     | NamedIndexedPropertySet of longDotId:LongIdentWithDots * Expr * Expr
@@ -323,6 +332,7 @@ type Method = {
     IsAsync:bool
     IsPrivate: bool
     IsOverride:bool
+    IsStatic:bool
     Accessibility:SynAccess option
     Attributes: (LongIdentWithDots * Expr option) list
 }
@@ -346,6 +356,7 @@ type Field = {
     Type: string
     Initilizer:Expr option
     IsConst : bool
+    IsStatic: bool
 }
 
 type AttributeValue = 
@@ -367,7 +378,18 @@ type Class = {
     BaseClass: SynType option
     ImplementInterfaces: SynType list
     TypeParameters:string list
-}
+} with 
+    static member Empty() = {
+        Name = { Name = DefaultNames.className; Generics = []}
+        Constructors = []
+        Fields = []
+        Methods = []
+        Properties = []
+        Attributes = []
+        BaseClass = None
+        ImplementInterfaces = []
+        TypeParameters = []
+    }
 
 type Interface = {
     Name:string
@@ -376,7 +398,7 @@ type Interface = {
 }
 
 type UsingStatement = {
-    Namespace:string
+    UsingNamespace:string
 }
 
 type Namespace = {
@@ -385,10 +407,15 @@ type Namespace = {
     Classes: Class list
 }
 
-type File = {
-    UsingStatements:UsingStatement list
-    Namespaces:Namespace list
-}
+type File = 
+    | FileWithUsingNamespace of usingStatement:UsingStatement list * namespaces: Namespace list
+    | FileWithUsingNamespaceAndDefault of usingStatement:UsingStatement list * namespaces: Namespace list * classes:Class list
+    | FileWithUsing of usingStatement:UsingStatement list * classes:Class list
+
+//type File = {
+//    UsingStatements:UsingStatement list
+//    Namespaces:Namespace list
+//}
 
 type FsharpSyntax = 
     | File of File
@@ -396,7 +423,7 @@ type FsharpSyntax =
     | Namespace of Namespace
     | Interface of Interface
     | Class of Class
-    | Field of Field seq
-    | Prop of Prop
-    | Method of Method
-    | Empty
+    //| Field of Field seq
+    //| Prop of Prop
+    //| Method of Method
+    //| Empty

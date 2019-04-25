@@ -6,8 +6,7 @@ open NUnit.Framework
 open FSharper.Core
 open FsUnit
 
-            
-[<TestClass>]
+[<TestFixture>]
 type ConverstionCsharpIsPatternMatching () =
 
     let formatFsharp (s:string) = 

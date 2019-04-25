@@ -4,23 +4,23 @@ open Fantomas
 open FSharper.Core
 open Fantomas.FormatConfig
 open System.Text.RegularExpressions
+
     
 [<EntryPoint>]
 let main argv =
 
-    let input = System.Console.In.ReadToEnd()
-    FSharper.Core.Converter.run input |> printfn "%s"
+    let printFsharpTree = false
 
+    if not printFsharpTree then 
+        let input = System.Console.In.ReadToEnd()
+        FSharper.Core.Converter.run input |> printfn "%s"
 
     // Used for debugging/development. To see the the F# syntax, add here. 
     // the syntax can then be used to idently how to construct it from the CSharp syntax
-    let printFsharpTree = false
-    let input = 
-             """type Foo =
-                    member this.Dispose(item) = 
-                        (foo :?> Action).Invoke ()""" // Add expected F# syntax here
-
-    if printFsharpTree then 
+    else
+        let input = 
+                 """type Bar() = 
+                        member this.Foo() = Console.WriteLine('\n')""" // Add expected F# syntax here
 
         let placeholderFilename = "/home/user/Test.fsx"
         let tree = TreeOps.getUntypedTree(placeholderFilename, input)
@@ -35,7 +35,7 @@ let main argv =
 
         tree.ToString() |> removeFilenameFromOutput |> printfn "%s"
 
-        CodeFormatter.FormatAST(tree, placeholderFilename, None, FormatConfig.Default) |> printfn "%s"
+        CodeFormatter.FormatAST(tree, placeholderFilename, Some input, {FormatConfig.Default with StrictMode = false}) |> printfn "%s"
 
     0
 

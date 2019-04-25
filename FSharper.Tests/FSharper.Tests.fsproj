@@ -11,6 +11,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ConversionTests.fs" />
+    <Compile Include="ConversionLoopingTests.fs" />
     <Compile Include="ConversionCsharpIsPatternMatchingTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>

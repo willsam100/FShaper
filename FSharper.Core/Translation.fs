@@ -55,6 +55,10 @@ module TreeOps =
     and toSynMatchExpr m = 
         match m with 
         | MatchClause.Clause (a,b,c) -> SynMatchClause.Clause (a, b |> Option.map toSynExpr,toSynExpr c,range0, SequencePointInfoForTarget.SequencePointAtTarget)
+
+    and toSynIndexerArg m = 
+        match m with 
+        | One e -> e |> toSynExpr |> SynIndexerArg.One
         
     and 
         toSynExpr (expr:Expr): SynExpr = 
@@ -66,7 +70,7 @@ module TreeOps =
 
         | Expr.New (isProtected, typeName, expr) -> SynExpr.New (isProtected, typeName, toSynExpr expr, range0)
         //| While of whileSeqPoint:SequencePointInfoForWhileLoop * whileExpr:Expr * doExpr:Expr
-        //| For of forSeqPoint:SequencePointInfoForForLoop * ident:Ident * identBody:Expr * bool * toBody:Expr * doBody:Expr
+        | Expr.For (a,b,c,d,e,f ) -> SynExpr.For (a,b,toSynExpr c,d, toSynExpr e, toSynExpr f, range0)
 
         | Expr.ForEach (a,b,c,d,e,f) -> SynExpr.ForEach (a,b,c,toSynPat d,toSynExpr e, toSynExpr f,range0)
 
@@ -102,9 +106,9 @@ module TreeOps =
         | Expr.DotGet (e,a) -> SynExpr.DotGet (toSynExpr e, range0, a, range0)
         //| DotSet of Expr * longDotId:LongIdentWithDots * Expr
         | Expr.Set (left, right) -> SynExpr.Set (toSynExpr left, toSynExpr right, range0)
-        //| DotIndexedGet of Expr * SynIndexerArg list
+        | Expr.DotIndexedGet (a,b) -> SynExpr.DotIndexedGet (toSynExpr a,b |> List.map toSynIndexerArg, range0,range0) //  of Expr * SynIndexerArg list
 
-        //| DotIndexedSet of objectExpr:Expr * indexExprs:SynIndexerArg list * valueExpr:Expr
+        | Expr.DotIndexedSet (a,b,c) -> SynExpr.DotIndexedSet (toSynExpr a, b |> List.map toSynIndexerArg , toSynExpr c, range0, range0, range0)
         //| NamedIndexedPropertySet of longDotId:LongIdentWithDots * Expr * Expr
         //| TypeTest of  expr:Expr * typeName:SynType
         //| Upcast of  expr:Expr * typeName:SynType 
@@ -163,24 +167,7 @@ module TreeOps =
     let containsCsharpIsMatch a = containsExpr (function | Expr.CsharpIsMatch _ -> true | _ -> false) a
     let isReturnFrom = containsExpr (function | Expr.ReturnFromIf _ -> true | _ -> false ) 
 
-    let rec replaceExpr f tree = 
-        let replaceExpr = replaceExpr f
-        match f tree with 
-        | Some x -> x
-        | None -> 
-            match tree with 
-            | Expr.Sequential (s1,s2,s3,s4) -> Expr.Sequential (s1,s2, replaceExpr s3, replaceExpr s4)
-            | Expr.Downcast (e,a) ->  Expr.Downcast (replaceExpr e,a)
-            | Expr.DotSet (a,b,c) -> Expr.DotSet (replaceExpr a, b, replaceExpr c)
-            | Expr.DotGet (e, a) -> Expr.DotGet (replaceExpr e, a)
-            | Expr.IfThenElse (a,b,c,d,e) -> Expr.IfThenElse (replaceExpr a,replaceExpr b,c |> Option.map replaceExpr,d,e)
-            | Expr.LetOrUse (x,y,z,i) -> Expr.LetOrUse (x,y,z, replaceExpr i)
-            | Expr.App (a,b,c,d) -> Expr.App (a,b, replaceExpr c, replaceExpr d)
-            | Expr.ForEach (a,b,c,d,e,f) -> Expr.ForEach (a,b,c,d, replaceExpr e, replaceExpr f)    
-            | Expr.Match (a,b,c,d) -> Expr.Match (a, replaceExpr b,c,d)
-            | Expr.Lambda (a,b,c,d) -> Expr.Lambda (a,b,c, replaceExpr d)
-            | Expr.Paren e -> replaceExpr e |> Expr.Paren
-            | e -> e
+
 
     let rec replaceSynExpr f tree = 
         let replaceSynExpr = replaceSynExpr f
@@ -523,34 +510,36 @@ module TreeOps =
     let rec rewriteMethodWithPrefix methodNames tree = 
         let recurse = rewriteMethodWithPrefix methodNames
 
-        let isLetPlaceholder exp = 
-            match exp with 
-            | Expr.InLetPlaceholder -> true
-            | _ -> false
+        let walker tree = 
+            match tree with 
+            | Expr.LongIdent (a, LongIdentWithDots(b, r)) -> 
+                let firstIdent = (List.head b).idText
+                methodNames |> Seq.tryFind (fun (className, name) -> firstIdent.Contains name )
+                |> Option.map (fun (className, _) -> 
+                    let replacement = 
+                        match className with 
+                        | None -> sprintf "this.%s"
+                        | Some staticMethodClassName -> sprintf "%s.%s" staticMethodClassName
 
-        match tree with 
-        | Expr.LongIdent (a, b) -> 
-            if methodNames |> Seq.exists (fun name -> b.ToString().Contains name ) then 
-
-                let idents = b.Lid |> List.map (fun x -> x.idText) |> String.concat "."
-                Expr.LongIdent (a, idents |> sprintf "this.%s" |> toLongIdentWithDots )
-            else Expr.LongIdent (a,b)
+                    LongIdentWithDots(b, r) |> joinLongIdentWithDots  |> replacement |> toLongIdent)
+            | e -> None
+        replaceExpr walker tree
             
-        // root of tree should not be contain immeidate child of InLetPlaceholder (has no meaning)
-        | Expr.LetOrUse (x,y,z,i) ->  
-            Expr.LetOrUse (x,y,z,recurse i)
+        //// root of tree should not be contain immeidate child of InLetPlaceholder (has no meaning)
+        //| Expr.LetOrUse (x,y,z,i) ->  
+        //    Expr.LetOrUse (x,y,z,recurse i)
 
-        | Expr.Sequential (s1,s2,s3,s4) -> Expr.Sequential (s1,s2,recurse s3,recurse s4)
-        | Expr.App (a,b,c,d) -> Expr.App (a,b, recurse c, recurse d)
-        | Expr.IfThenElse (a,b,c,d,e) -> Expr.IfThenElse (a,recurse b,c |> Option.map recurse,d,e)
+        //| Expr.Sequential (s1,s2,s3,s4) -> Expr.Sequential (s1,s2,recurse s3,recurse s4)
+        //| Expr.App (a,b,c,d) -> Expr.App (a,b, recurse c, recurse d)
+        //| Expr.IfThenElse (a,b,c,d,e) -> Expr.IfThenElse (a,recurse b,c |> Option.map recurse,d,e)
 
-        | Expr.ForEach (a,b,c,d,e,f) -> 
-            let e2 = recurse e
-            let f2 = recurse f
+        //| Expr.ForEach (a,b,c,d,e,f) -> 
+        //    let e2 = recurse e
+        //    let f2 = recurse f
 
-            Expr.ForEach (a,b,c,d, e2, f2)
+        //    Expr.ForEach (a,b,c,d, e2, f2)
 
-        | _ -> tree
+        //| _ -> tree
 
     let simplifyTree = 
         replaceExpr (fun tree -> 
@@ -610,6 +599,9 @@ module TreeOps =
             | SynExpr.DotGet (a,b,c, d) -> SynExpr.DotGet (a, moveDown b, c, moveDown d) 
             | SynExpr.FromParseError (a,b) -> SynExpr.FromParseError (loop a, moveAndAdd b)
             | SynExpr.Match (a,b,c,d,e) -> SynExpr.Match (a,b,c,d,e)
+            | SynExpr.For (a,b,c,d,e,f,g) -> SynExpr.For (a,b,c,d,e,f,g)
+            | SynExpr.DotIndexedGet (a,b,c,d) -> SynExpr.DotIndexedGet (a,b,c,d)
+            | SynExpr.DotIndexedSet (a,b,c,d,f,g) -> SynExpr.DotIndexedSet (a,b,c,d,f,g)
 
         let walker tree = 
             match tree with 

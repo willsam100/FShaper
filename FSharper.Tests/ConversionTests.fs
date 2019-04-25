@@ -3,8 +3,8 @@ namespace Tests
 open NUnit.Framework
 open FSharper.Core
 open FsUnit
-            
-[<TestClass>]
+
+[<TestFixture>]
 type TestClass () =
 
     let formatFsharp (s:string) = 
@@ -25,6 +25,159 @@ type TestClass () =
             formatFsharp 
                "open MvvmCross.Forms.Views
                 open TipCalc.Core.ViewModels")
+
+    [<Test>]
+    member this.``class with static main method`` () = 
+        let csharp = 
+             """using System;
+
+                public class Program
+                {
+                    static void Main(string[] args)
+                    {
+                        Console.WriteLine("Hello, World");
+                    } 
+                }"""
+
+        let fsharp = 
+             """open System
+                
+                type Program() =
+                    static member this.Main(args: string []) = Console.WriteLine("Hello, World")"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+
+    [<Test>]
+    member this.``class with static field`` () = 
+        let csharp = 
+             """public class Program
+                {
+                    static foo c = "hello, world";
+                }"""
+
+        let fsharp = 
+             """type Program() =
+                    static let mutable c = "hello, world" """
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``class with static and instance methods - correct prefix for method calls`` () = 
+        let csharp = 
+             """public class Program
+                {
+                    public static void Main()
+                    {
+                        var p = new Program();
+                        p.FooInstance();
+                    }
+                    
+                    public static void FooStatic() 
+                    {
+                            Console.WriteLine($"Foo Static");   
+                    }
+                    
+                    public void FooInstance()
+                    {
+                        FooStatic();
+                        BarInstance();
+                    }
+        
+                    private void BarInstance()
+                    {
+                        Console.WriteLine($"Bar instance private"); 
+                    }
+                }"""
+
+        let fsharp = 
+             """type Program() =
+
+                    static member Main() =
+                        let mutable p = new Program()
+                        p.FooInstance()
+
+                    static member FooStatic() = Console.WriteLine(sprintf "Foo Static")
+
+                    member this.FooInstance() =
+                        Program.FooStatic()
+                        this.BarInstance()
+
+                    member private this.BarInstance() = Console.WriteLine(sprintf "Bar instance private") """
+            
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``array initlization`` () = 
+        let csharp = 
+             """long[] c = new long[100];"""
+
+        let fsharp = 
+            """let mutable c = Array.zeroCreate<int64> 100"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``parse chars`` () = 
+        // https://devblogs.microsoft.com/csharpfaq/what-character-escape-sequences-are-available/
+        let csharp = 
+             """void Foo() 
+                { 
+                    Console.WriteLine('a'); 
+                    Console.WriteLine('\n'); 
+                    Console.WriteLine('\t'); 
+                    Console.WriteLine('\r'); 
+                    Console.WriteLine('\b'); 
+                    Console.WriteLine('\''); 
+                    Console.WriteLine('\\');
+                }"""
+
+        let fsharp = 
+             """member this.Foo() =
+                    Console.WriteLine('a')
+                    Console.WriteLine('\n')
+                    Console.WriteLine('\t')
+                    Console.WriteLine('\r')
+                    Console.WriteLine('\b')
+                    Console.WriteLine('\'')
+                    Console.WriteLine('\\')"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``array update with nested assignment`` () = 
+        let csharp = 
+             """c[i = n] -= 1;"""
+
+        let fsharp = 
+             """i <- n
+                    c.[i] <- c.[i] - 1"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``adding to string is escaped`` () = 
+        let csharp = 
+             """void Foo() { Console.Write("Hello, " + n); }"""
+
+        let fsharp = 
+             """member this.Foo() = Console.Write("Hello, " + (n.ToString()))"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
         
 
     [<Test>]

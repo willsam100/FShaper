@@ -6,20 +6,21 @@ open Fantomas.FormatConfig
 open Fantomas
 open FSharper.Core.TreeOps
 
+
+
 module FormatOuput = 
 
-    let file = "unknown.fs"
     let createOpenStatements (name: UsingStatement) = 
-        (LongIdentWithDots (name.Namespace |> toIdent, [range0]), range0) |> SynModuleDecl.Open 
+        (LongIdentWithDots (name.UsingNamespace |> toIdent, [range0]), range0) |> SynModuleDecl.Open 
 
     let toNamespace (ns:Namespace) mods = 
         SynModuleOrNamespace (toIdent ns.Name,false,false, mods, PreXmlDocEmpty, [], None, range0)
 
     let defaultModule mods = 
-        [SynModuleOrNamespace (toIdent "Program35949ae4-3f6e-11e9-b4dc-230deb73e77f",false,true, mods, PreXmlDocEmpty, [], None, range0)]
+        [SynModuleOrNamespace (toIdent DefaultNames.namespaceName,false,true, mods, PreXmlDocEmpty, [], None, range0)]
 
     let toFile moduleOrNs = 
-        ParsedImplFileInput (file, true, QualifiedNameOfFile (Ident()), [], [], moduleOrNs, (true, true)) 
+        ParsedImplFileInput (DefaultNames.file, true, QualifiedNameOfFile (Ident()), [], [], moduleOrNs, (true, true)) 
         |> ParsedInput.ImplFile
 
     let inMethod (x:Field) = 
@@ -34,10 +35,10 @@ module FormatOuput =
                     None, SynBindingKind.NormalBinding, false, not x.IsConst, [], 
                     SynValData (None, SynValInfo ([], SynArgInfo ([], false, None )), None), 
                     Pat.Named (Pat.Wild, Ident(x.Name, range0), false, None), init)
-        let x = Expr.LetOrUse (false, false, [var], Expr.Const <| SynConst.String ("Program35949ae4-3f6e-11e9-b4dc-230deb73e77f", range0))
+        let x = Expr.LetOrUse (false, false, [var], Expr.Const <| SynConst.String (DefaultNames.namespaceName, range0))
 
         {
-            Name = "Method156143763f6e11e984e11f16c4cfd728"
+            Name = DefaultNames.method
             Parameters = []
             Body = x
             ReturnType = "void"
@@ -45,6 +46,7 @@ module FormatOuput =
             IsAsync = false
             IsPrivate = false
             IsOverride = false
+            IsStatic = false
             Accessibility = None
             Attributes = []
         }
@@ -60,8 +62,11 @@ module FormatOuput =
             |> rewriteMethodWithPrefix methodNames
             |> rewriteActionOrFuncToUseCallInvoke
 
-    let toMethod methodNames (x:Method) = 
-        let methodName = LongIdentWithDots (toIdent ("this." + x.Name), [range0])
+    let toMethod className methodNames (x:Method) = 
+        let methodName = 
+            if x.IsStatic 
+            then toLongIdentWithDots x.Name
+            else LongIdentWithDots (toIdent ("this." + x.Name), [range0])
 
         let argInfos = 
             let args = 
@@ -100,7 +105,7 @@ module FormatOuput =
                 PreXmlDoc.PreXmlDocEmpty,
                 SynValData (
                     Some {
-                        MemberFlags.IsInstance = true
+                        MemberFlags.IsInstance = not x.IsStatic
                         MemberFlags.IsDispatchSlot = false 
                         MemberFlags.IsOverrideOrExplicitImpl = false 
                         MemberFlags.IsFinal = false
@@ -211,7 +216,7 @@ module FormatOuput =
 
     let toDefaultClass method = 
         let x = 
-            ComponentInfo ([], [], [], toIdent "Klass067803f4-3f6e-11e9-b4df-6f8305ceb4a6", PreXmlDocEmpty, false, None, range0)
+            ComponentInfo ([], [], [], toIdent DefaultNames.className, PreXmlDocEmpty, false, None, range0)
 
         let methods = [method]
         let ctor = SynMemberDefn.ImplicitCtor (None,[],[],None, range0)
@@ -235,7 +240,7 @@ module FormatOuput =
                     (LongIdentWithDots (toIdent x.Name, [range0]), None, None, 
                     Pats ([]), None, range0 ), None, 
                     toSynExpr init, range0 , SequencePointAtBinding range0)
-        SynMemberDefn.LetBindings ([binding], false, false, range0)
+        SynMemberDefn.LetBindings ([binding], x.IsStatic, false, range0)
        
 
     let toClass (cn:Class) = 
@@ -281,8 +286,8 @@ module FormatOuput =
             ComponentInfo (att, typeVals, [], toIdent cn.Name.Name, PreXmlDocEmpty, false, None, range0)
 
         let properties = cn.Properties |> List.collect toProperty
-        let methodNames = cn.Methods |> List.map (fun x -> x.Name.Replace ("this.", ""))
-        let methods = cn.Methods |> List.map (toMethod methodNames)
+        let methodNames = cn.Methods |> List.map (fun x -> (if x.IsStatic then Some cn.Name.Name else None), x.Name.Replace ("this.", ""))
+        let methods = cn.Methods |> List.map (toMethod (Some cn.Name.Name) methodNames)
         let fields = cn.Fields |> List.map toLet
 
         let interfaces = 
@@ -297,12 +302,13 @@ module FormatOuput =
                     Method.IsOverride = false
                     Method.IsVirtual = false
                     Method.IsPrivate = true
+                    Method.IsStatic = false
                     Method.Parameters = []
                     Method.Attributes = []
                     Method.ReturnType = "void"
                 }
-                
-                SynMemberDefn.Interface (x,method |> toMethod [] |> List.singleton |> Some, range0))
+
+                SynMemberDefn.Interface (x,method |> toMethod None [] |> List.singleton |> Some, range0))
 
         let ctors = 
 
@@ -353,44 +359,81 @@ module FormatOuput =
 let toFsharpSynaxTree input = 
     match input with 
     | File f -> 
-        let mods = f.UsingStatements |> List.map FormatOuput.createOpenStatements 
-        let ns = 
-            match f.Namespaces with 
-            | [] -> [{Name = "Namespace579084dc-3f6e-11e9-85bb-d721e145d6a1"; Interfaces = []; Classes = [] }]
-            | xs -> xs 
 
-        let namespaces = 
-            ns |> List.map (fun x -> 
-                let classes = 
-                    x.Classes |> List.map FormatOuput.toClass
-                FormatOuput.toNamespace x (mods @ classes) )
-        FormatOuput.toFile namespaces
+        let defaultNamespace = {Name = DefaultNames.namespaceName; Interfaces = []; Classes = [] }
+
+        match f with 
+        | FileWithUsing (usings, classes) -> 
+            let ns = {defaultNamespace with Classes = classes }
+            let mods = usings |> List.map FormatOuput.createOpenStatements
+            let namespaces = 
+                let classes = ns.Classes |> List.map FormatOuput.toClass
+                [FormatOuput.toNamespace ns (mods @ classes)]
+            FormatOuput.toFile namespaces
+
+        | FileWithUsingNamespace (usngs, namespaces) -> 
+            let mods = usngs |> List.map FormatOuput.createOpenStatements 
+            let ns = 
+                match namespaces with 
+                | [] -> [defaultNamespace]
+                | xs -> xs 
+
+            let namespaces = 
+                ns |> List.map (fun x -> 
+                    let classes = 
+                        x.Classes |> List.map FormatOuput.toClass
+                    FormatOuput.toNamespace x (mods @ classes) )
+            FormatOuput.toFile namespaces
+
+        | FileWithUsingNamespaceAndDefault (usngs, namespaces, classes) -> 
+            let mods = usngs |> List.map FormatOuput.createOpenStatements 
+            let ns = 
+                match namespaces, classes with 
+                | [], [] -> [defaultNamespace]
+                | [], classes -> [{defaultNamespace with Classes = classes }]
+                | ns, [] -> ns
+                | ns, classes -> {defaultNamespace with Classes = classes } :: ns
+
+            let namespaces = 
+                ns |> List.map (fun x -> 
+                    let classes = 
+                        x.Classes |> List.map FormatOuput.toClass
+                    FormatOuput.toNamespace x (mods @ classes) )
+            FormatOuput.toFile namespaces
+
 
     | UsingStatement us -> 
-        let ns = {Name = "Namespace579084dc-3f6e-11e9-85bb-d721e145d6a1"; Interfaces = []; Classes = [] }           
+        let ns = {Name = DefaultNames.namespaceName; Interfaces = []; Classes = [] }           
         FormatOuput.toNamespace ns [FormatOuput.createOpenStatements us] |> List.singleton |> FormatOuput.toFile
 
     | Namespace ns -> FormatOuput.toNamespace ns [] |> List.singleton |> FormatOuput.toFile
     | Class cn ->  cn  |> FormatOuput.toClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
-    | Method m ->  m |> FormatOuput.toMethod [m.Name] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
-    | FSharper.Core.Field f ->  f |> Seq.head |> FormatOuput.inMethod |> FormatOuput.toMethod [] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
+    //| Method m ->  m |> FormatOuput.toMethod [m.Name] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
+    //| FSharper.Core.Field f ->  f |> Seq.head |> FormatOuput.inMethod |> FormatOuput.toMethod [] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
 
 // One of th goals of this project is to support converting non-complete C# ie that from a blog post. 
 // To compile the code, scaffolding must be added ie a namespace, class etc. 
 // the output should match the input; this removes the scaffolding.
 let removeDefaultScaffolding (fsharpOutput:string) = 
     fsharpOutput
-    |> (fun x -> x.Replace("namespace ``Namespace579084dc-3f6e-11e9-85bb-d721e145d6a1``\n", ""))
+    |> (fun x -> x.Replace("namespace ``Program35949ae4-3f6e-11e9-b4dc-230deb73e77f``\n", ""))
     |> (fun x -> x.Replace("type ``Klass067803f4-3f6e-11e9-b4df-6f8305ceb4a6``() =\n", ""))
     |> (fun x -> x.Replace("module ``Program35949ae4-3f6e-11e9-b4dc-230deb73e77f``\n\n", ""))
     |> (fun x -> x.Replace("\"Program35949ae4-3f6e-11e9-b4dc-230deb73e77f\"\n", ""))
     |> (fun x -> x.Replace("member this.Method156143763f6e11e984e11f16c4cfd728() =\n", ""))
+    |> (fun x -> x.Replace("""\010""", "\\n"))
+    |> (fun x -> x.Replace("""\009""", "\\t"))
+    |> (fun x -> x.Replace("""\013""", "\\r"))
 
 
 let toFsharpString config parseInput = 
     if CodeFormatter.IsValidAST parseInput then
 
-        let tree = CodeFormatter.FormatAST(parseInput, FormatOuput.file, None, config) 
+        let source = 
+             """type Klass067803f4-3f6e-11e9-b4df-6f8305ceb4a6() =  
+                   member this.Foo() = Console.WriteLine('\n')"""
+
+        let tree = CodeFormatter.FormatAST(parseInput, DefaultNames.file, Some source, { FormatConfig.Default with StrictMode = false}) 
 
         tree
         |> removeDefaultScaffolding
@@ -411,7 +454,7 @@ let run (input:string) =
             {
                 FormatConfig.Default with 
                     FormatConfig.SemicolonAtEndOfLine = false
-                    FormatConfig.StrictMode = true
+                    FormatConfig.StrictMode = false
                     FormatConfig.PageWidth = 120
                     FormatConfig.SpaceAfterComma = true
                     FormatConfig.SpaceBeforeArgument = true
@@ -442,10 +485,12 @@ let run (input:string) =
 
     let visitor = new FSharperTreeBuilder()
 
-    tree.GetRoot().ChildNodes()
+    let nodes = tree.GetRoot().ChildNodes()
+    
+    nodes
     |> Seq.fold (visitor.ParseSyntax) None
     |> Option.map toFsharpSynaxTree 
-    |> Option.map(removeFhsarpIn FormatOuput.file)
+    |> Option.map(removeFhsarpIn DefaultNames.file)
     |> Option.map (toFsharpString config) 
     |> function 
     | Some x -> x.Trim()
