@@ -11,9 +11,18 @@ open Microsoft.FSharp.Compiler
 open Microsoft.FSharp.Compiler.Range
 open System.Threading
 
+module ExprOps = 
+    let toApp left right = 
+        Expr.App (ExprAtomicFlag.NonAtomic, false, left, right)
+
+    let toInfixApp left op right  = 
+        toApp (Expr.App (ExprAtomicFlag.NonAtomic, true, op, left)) right
+
 [<AutoOpen>]
 module ParserUtil = 
     let toSingleIdent (s:string) = Ident(s, range0)
+    
+    
 
 
     let rec replaceExpr f tree = 
@@ -42,6 +51,9 @@ module ParserUtil =
             | Expr.DotIndexedSet(a,b,c) -> Expr.DotIndexedSet( replaceExpr a,b, replaceExpr c)
             | Expr.Set (a,b) -> Expr.Set ( replaceExpr a, replaceExpr b)
             | Expr.Tuple xs -> xs |> List.map replaceExpr |> Expr.Tuple
+            | Expr.DoBang e -> e |> replaceExpr |> Expr.DoBang
+            | Expr.CompExpr (a,b,c) -> Expr.CompExpr (a,b, replaceExpr c)
+            | Expr.LetOrUseBang (a,b,c,d,e,f) -> Expr.LetOrUseBang (a,b,c,d, replaceExpr e,replaceExpr f)
             | e -> e
 
     let rec getFirstExpr f tree = 
@@ -56,6 +68,7 @@ module ParserUtil =
             | Expr.DotGet (e, a) -> getFirstExpr e
             | Expr.IfThenElse (a,b,c,d,e) -> getFirstExpr a |> Option.orElse (getFirstExpr b) |> Option.orElse (c |> Option.bind getFirstExpr)
             | Expr.LetOrUse (x,y,z,i) -> getFirstExpr i
+            | Expr.LetOrUseBang (a,b,c,d,e,f) -> getFirstExpr e |> Option.orElse (getFirstExpr f)
             | Expr.App (a,b,c,d) -> getFirstExpr c |> Option.orElse (getFirstExpr d)
             | Expr.ForEach (a,b,c,d,e,f) -> getFirstExpr e |> Option.orElse (getFirstExpr f)
             | Expr.Match (a,b,c,d) -> getFirstExpr b
@@ -64,35 +77,33 @@ module ParserUtil =
             | Expr.For (a,b,c,d,e,f) -> getFirstExpr c |> Option.orElse (getFirstExpr e) |> Option.orElse (getFirstExpr f)
             | Expr.While (a,b,c) -> getFirstExpr b |> Option.orElse (getFirstExpr c)
             | Expr.YieldOrReturn (a, b) -> getFirstExpr b
+            | Expr.DoBang e -> getFirstExpr e
+            | Expr.CompExpr (a,b,c) -> getFirstExpr c
             | e -> None
 
     let rec containsExpr f tree = 
         let containsExpr = containsExpr f
         match tree with 
-        | Expr.Sequential (s1,s2,s3,s4) -> 
-            containsExpr s3 @ containsExpr s4
-
+        | x when f x -> [x]
+        | Expr.Sequential (s1,s2,s3,s4) -> containsExpr s3 @ containsExpr s4
         | Expr.Downcast (e,_) when f tree -> [tree]
         | Expr.Downcast (e,_) -> containsExpr e
         | Expr.DotSet (a,b,c) -> containsExpr a @ containsExpr c
         | Expr.DotGet (e, _) -> containsExpr e
-
         | Expr.IfThenElse (a,b,c,d,e) -> (containsExpr a) @ (containsExpr b)
-
-        | Expr.App (a,b,c,d) -> 
-            containsExpr c @ containsExpr d
-
-        | Expr.ForEach (a,b,c,d,e,f) -> 
-            containsExpr e @ containsExpr f
-
+        | Expr.LetOrUse (x,y,z,i) -> containsExpr i
+        | Expr.LetOrUseBang (a,b,c,d,e,f) -> containsExpr e @ containsExpr f
+        | Expr.App (a,b,c,d) ->  containsExpr c @ containsExpr d
+        | Expr.ForEach (a,b,c,d,e,f) -> containsExpr e @ containsExpr f
         | Expr.Match (a,b,c,d) -> 
             c |> List.map (fun (MatchClause.Clause (a,b,c)) -> containsExpr c) |> List.reduce (@)
-
         | Expr.Lambda (a,b,c,d) -> containsExpr d
-
         | Expr.Paren e -> containsExpr e
-
-        | x when f x -> [x]
+        | Expr.For (a,b,c,d,e,f) -> containsExpr c @  containsExpr e @ containsExpr f
+        | Expr.While (a,b,c) -> containsExpr b @ containsExpr c
+        | Expr.YieldOrReturn (a, b) -> containsExpr b
+        | Expr.DoBang e -> containsExpr e
+        | Expr.CompExpr (a,b,c) -> containsExpr c
         | _ -> []
 
     let replaceAnyPostOrPreIncrement =
@@ -134,6 +145,12 @@ module ParserUtil =
                         match tree with 
                         | Expr.LetOrUse (a,b,c,Expr.InLetPlaceholder) -> Expr.LetOrUse (a,b,c,y) |> Some
                         | _ -> None) x
+                | Expr.LetOrUseBang _ -> 
+                    replaceExpr (fun tree -> 
+                        match tree with 
+                        | Expr.LetOrUseBang (a,b,c,d,e,Expr.InLetPlaceholder) -> Expr.LetOrUseBang (a,b,c,d,e,y) |> Some
+                        | _ -> None) x
+                
                 | _ -> Expr.Sequential (SequencePointsAtSeq, true, x, y) ) 
 
     let joinLongIdentWithDots (b:LongIdentWithDots) = 
@@ -994,12 +1011,18 @@ type CSharpStatementWalker() =
                 | Expr.Null -> identifier, Expr.TypeApp (toLongIdent "Unchecked.defaultof", [ParserUtil.parseType x.Type])
                 | e -> identifier, e)
             |> Seq.map (fun (identfier, init) -> 
-                Expr.LetOrUse(
-                    false, false, 
-                    [LetBind(None, SynBindingKind.NormalBinding, false, true, [],
-                        SynValData (
-                            None, SynValInfo ([], SynArgInfo ([], false, None )), None), 
-                        Pat.Named (Pat.Wild, Ident(identfier, range0), false, None), init)], Expr.InLetPlaceholder) )
+
+                match init with 
+                | Expr.DoBang e -> 
+                    Expr.LetOrUseBang (SequencePointInfoForBinding.NoSequencePointAtLetBinding, false, false, 
+                        SynPat.LongIdent (toLongIdentWithDots identfier, None, None, SynConstructorArgs.NamePatPairs ([], range0), None, range0), e, Expr.InLetPlaceholder)
+                | _ -> 
+                    Expr.LetOrUse(
+                        false, false, 
+                        [LetBind(None, SynBindingKind.NormalBinding, false, true, [],
+                            SynValData (
+                                None, SynValInfo ([], SynArgInfo ([], false, None )), None), 
+                            Pat.Named (Pat.Wild, Ident(identfier, range0), false, None), init)], Expr.InLetPlaceholder) )
             |> Seq.toList
             |> function 
             | [] -> 
@@ -1161,7 +1184,10 @@ type CSharpStatementWalker() =
             Expr.App (ExprAtomicFlag.NonAtomic, false, typeApp, SynConst.Int32 100 |> Expr.Const)
             
         | :? AssignmentExpressionSyntax as x -> x |> CSharpStatementWalker.ParseAssignmentExpressionSyntax
-        //| :? AwaitExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "AwaitExpressionSyntax"
+        | :? AwaitExpressionSyntax as x -> 
+            let expr = CSharpStatementWalker.ParseExpression x.Expression
+            Expr.DoBang expr
+        
         | :? BinaryExpressionSyntax as x -> x |> CSharpStatementWalker.ParseBinaryExpresson
         | :? CastExpressionSyntax as x -> 
             let exp = CSharpStatementWalker.ParseExpression x.Expression

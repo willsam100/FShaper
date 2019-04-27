@@ -7,6 +7,9 @@ open Microsoft.FSharp.Compiler.SourceCodeServices.Structure
 open Microsoft.FSharp.Compiler.SourceCodeServices 
 open Fantomas
 
+[<AutoOpen>]
+type CompExpr = Seq | Async 
+
 module Range = 
     let addLine file (range:range) = 
 
@@ -86,8 +89,10 @@ module TreeOps =
         | Expr.TypeApp (a,b) -> SynExpr.TypeApp (toSynExpr a, range0, b, [], None, range0, range0)
 
         | Expr.LetOrUse (a,b,c,d) -> // of isRecursive:bool * isUse:bool * bindings:SynBinding list * body:Expr
-            
+
             SynExpr.LetOrUse (a,b,c |> List.map toBinding, toSynExpr d, range0)
+
+        | Expr.LetOrUseBang (a,b,c,d,e,f) -> SynExpr.LetOrUseBang (a,b,c,d, toSynExpr e, toSynExpr f, range0)
 
         //| TryWith of tryExpr:Expr * withCases:SynMatchClause list * trySeqPoint:SequencePointInfoForTry * withSeqPoint:SequencePointInfoForWith
 
@@ -123,7 +128,7 @@ module TreeOps =
         //| TraitCall of SynTypar list * SynMemberSig * Expr 
         //| LetOrUseBang    of bindSeqPoint:SequencePointInfoForBinding * isUse:bool * isFromSource:bool * SynPat * Expr * Expr
 
-        //| DoBang      of expr:Expr
+        | Expr.DoBang e -> SynExpr.DoBang (toSynExpr e, range0)
         //| Fixed of expr:Expr
 
         //| Expr.ReturnFromIf e -> toSynExpr e //SynExpr.Const (SynConst.Unit, range0)
@@ -138,38 +143,10 @@ module TreeOps =
         | _ -> None
         
     let rec containsExpr f tree = 
-        let containsExpr = containsExpr f
-        match tree with 
-        | Expr.Sequential (s1,s2,s3,s4) -> 
-            containsExpr s3 || containsExpr s4
-
-        | Expr.Downcast (e,_) when f tree -> true
-        | Expr.Downcast (e,_) -> containsExpr e
-        | Expr.DotSet (a,b,c) -> containsExpr a || containsExpr c
-        | Expr.DotGet (e, _) -> containsExpr e
-
-        | Expr.IfThenElse (a,b,c,d,e) -> containsExpr a || containsExpr b
-
-        | Expr.App (a,b,c,d) -> 
-            containsExpr c || containsExpr d
-
-        | Expr.ForEach (a,b,c,d,e,f) -> 
-            containsExpr e || containsExpr f
-
-        | Expr.Match (a,b,c,d) -> 
-            c |> List.map (fun (MatchClause.Clause (a,b,c)) -> containsExpr c) |> List.reduce (||)
-
-        | Expr.Lambda (a,b,c,d) -> containsExpr d
-
-        | Expr.Paren e -> containsExpr e
-        | Expr.While (a,b,c) -> containsExpr b || containsExpr c
-
-        | x when f x -> true
-        | _ -> false
+       ParserUtil.containsExpr f tree |> List.isEmpty |> not
 
     let containsCsharpIsMatch a = containsExpr (function | Expr.CsharpIsMatch _ -> true | _ -> false) a
     let isReturnFrom = containsExpr (function | Expr.ReturnFromIf _ -> true | _ -> false ) 
-
 
 
     let rec replaceSynExpr f tree = 
@@ -184,6 +161,7 @@ module TreeOps =
             | SynExpr.DotGet (e, a, b, c) -> SynExpr.DotGet (replaceSynExpr e, a,b,c)
             | SynExpr.IfThenElse (a,b,c,d,e,f,g) -> SynExpr.IfThenElse (replaceSynExpr a,replaceSynExpr b,c |> Option.map replaceSynExpr,d,e,f,g)
             | SynExpr.LetOrUse (x,y,z,i,j) -> SynExpr.LetOrUse (x,y,z, replaceSynExpr i,j)
+            | SynExpr.LetOrUseBang (x,y,z,i,j,k,l) -> SynExpr.LetOrUseBang (x,y,z, i, replaceSynExpr j,replaceSynExpr k, l)
             | SynExpr.App (a,b,c,d,e) -> SynExpr.App (a,b, replaceSynExpr c, replaceSynExpr d,e)
             | SynExpr.ForEach (a,b,c,d,e,f,g) -> SynExpr.ForEach (a,b,c,d, replaceSynExpr e, replaceSynExpr f,g)    
             | SynExpr.Match (a,b,c,d,f) -> SynExpr.Match (a, replaceSynExpr b,c,d,f)
@@ -467,21 +445,58 @@ module TreeOps =
     let wrapNewKeyword tree = 
         replaceExpr (fun tree ->
             match tree with 
-            //| Expr.New (a,b,c) -> Expr.Paren (Expr.New (a,b,c)) |> Some
             | Expr.DotGet (Expr.New (a,b,c), d) -> Expr.DotGet (Expr.Paren (Expr.New (a,b,c)) ,d) |> Some
             | e -> None) tree
 
     let fixCsharpReservedNames tree = 
         replaceExpr (fun tree ->
             match tree with 
-            //| Expr.New (a,b,c) -> Expr.Paren (Expr.New (a,b,c)) |> Some
             | Expr.LongIdent (a, b) when (joinLongIdentWithDots b).StartsWith "@" -> Expr.LongIdent (a, (joinLongIdentWithDots b).Substring(1) |> toLongIdentWithDots) |> Some
             | e -> None) tree
 
-    let shouldWrapInSeq tree = 
-        containsExpr (function 
-            | Expr.YieldOrReturn ((true,_), _) -> true
+    let replaceAsyncOps tree = 
+        let awaitTask expr = 
+            ExprOps.toInfixApp (expr) (toLongIdent "op_PipeRight") (toLongIdent "Async.AwaitTask")
+
+        let rec walker = function
+            | Expr.DoBang _ as expr -> expr |> awaitTask |> Some
+            | Expr.LetOrUseBang (a,b,c,d,e,Expr.LongIdent (f,g)) -> Expr.YieldOrReturn ((false, true), e |> awaitTask) |> Some
+            | Expr.LetOrUseBang (a,b,c,d,e,Expr.Sequential(f,g,h,i)) -> 
+                let f = Expr.Sequential(f,g,replaceExpr walker h, replaceExpr walker i)
+                Expr.LetOrUseBang (a,b,c,d,e |> awaitTask, f) |> Some
+            | Expr.LetOrUseBang (a,b,c,d,e,Expr.LetOrUseBang (f,g,h,i,j,k)) -> 
+                let f = replaceExpr walker (Expr.LetOrUseBang (f,g,h,i,j,k))
+                Expr.LetOrUseBang (a,b,c,d,e |> awaitTask, f) |> Some
+            | Expr.LetOrUseBang (a,b,c,d,e,Expr.App (f,g,h,i)) -> 
+                let f = Expr.YieldOrReturn ((false, true), Expr.App (f,g,h,i))
+                Expr.LetOrUseBang (a,b,c,d,e |> awaitTask, f) |> Some
+            | Expr.LetOrUseBang (a,b,c,d,e,f) -> 
+
+                Expr.LetOrUseBang (a,b,c,d, e |> awaitTask, f) |> Some
+            | _ -> None
+
+        replaceExpr walker tree
+
+    let shouldWrapInComp tree = 
+        ParserUtil.containsExpr (function 
+            | Expr.YieldOrReturn ((_,_), _) as x -> true
+            | Expr.DoBang (_) -> true
+            | Expr.LetOrUseBang (_) -> true
             | _ -> false) tree
+        |> function
+        | [Expr.YieldOrReturn ((true,_), _)] -> Some CompExpr.Seq
+        | [Expr.YieldOrReturn ((_,true), _)] -> Some CompExpr.Async
+        | [Expr.DoBang (_)] -> Some CompExpr.Async
+        | [Expr.LetOrUseBang (_)] -> Some CompExpr.Async
+        | _ -> None
+
+    let wrapInComp name e = 
+        let toComp name expr =
+            ExprOps.toApp (toLongIdent name) (Expr.CompExpr (false, ref false, expr))
+        match name with
+        | CompExpr.Async -> ExprOps.toInfixApp (e |> replaceAsyncOps |> toComp "async") (toLongIdent "op_PipeRight") (toLongIdent "Async.StartAsTask")
+        | CompExpr.Seq -> toComp "seq" e
+
 
     let replaceDotGetIfNotInLetBinding tree = 
 
@@ -509,11 +524,15 @@ module TreeOps =
             match tree with 
             | Expr.LetOrUse (x,y,z,Expr.InLetPlaceholder) ->  
                 Expr.LetOrUse (x,y,z, Expr.Const SynConst.Unit) |> Some
+            | Expr.LetOrUseBang (a,b,c,d,e,Expr.InLetPlaceholder) -> Expr.YieldOrReturn ((false, true), e) |> Some
             | Expr.Sequential (s1,s2,s3,s4) -> 
                 match s3 with  
                 | Expr.LetOrUse (x,y,z,Expr.InLetPlaceholder) -> 
                     let e = replaceExpr walker s4
                     Expr.LetOrUse (x,y,z,e) |> Some
+                | Expr.LetOrUseBang (a,b,c,d,e,f) -> 
+                    let f = replaceExpr walker s4
+                    Expr.LetOrUseBang (a,b,c,d,e,f) |> Some
                 | _ -> None
             | _ -> None
         replaceExpr walker tree

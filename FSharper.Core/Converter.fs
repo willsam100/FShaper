@@ -53,6 +53,8 @@ module FormatOuput =
 
     let santizeCode methodNames expr = 
 
+        
+    
         let e = 
             expr
             |> simplifyTree
@@ -64,9 +66,9 @@ module FormatOuput =
             |> rewriteMethodWithPrefix methodNames
             |> fixCsharpReservedNames
             |> rewriteActionOrFuncToUseCallInvoke
-        match shouldWrapInSeq e with 
-        | true -> Expr.App (ExprAtomicFlag.NonAtomic, false, toLongIdent "seq", Expr.CompExpr (false, ref false, e))
-        | false -> e
+        match shouldWrapInComp e with 
+        | Some x ->  wrapInComp x e
+        | None -> e
         
     let toMethod className methodNames (x:Method) = 
         let methodName = 
@@ -77,7 +79,6 @@ module FormatOuput =
         let argInfos = 
             let args = 
                 x.Parameters |> List.map (fun x -> SynArgInfo ([],false, Ident(x.Name, range0) |> Some  ) )
-            //let returnArgInfo = SynArgInfo ([],false, x.ReturnType  ) 
             [args]
 
         let namedArgs = 
