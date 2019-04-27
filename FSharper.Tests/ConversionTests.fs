@@ -186,7 +186,7 @@ type TestClass () =
              """IEnumerable<int> Foo() { yield return 10; }"""
 
         let fsharp = 
-             """member this.Foo(): seq<int> = yield 10"""
+             """member this.Foo(): seq<int> = seq { yield 10 }"""
                    
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)

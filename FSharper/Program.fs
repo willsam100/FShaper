@@ -9,7 +9,7 @@ open System.Text.RegularExpressions
 [<EntryPoint>]
 let main argv =
 
-    let printFsharpTree = true
+    let printFsharpTree = false
 
     if not printFsharpTree then 
         let input = System.Console.In.ReadToEnd()
@@ -20,7 +20,8 @@ let main argv =
     else
         let input = 
                  """type Program() =
-                        static member Main(args: string []) : unit = Console.WriteLine("Hello, World")""" // Add expected F# syntax here
+                        static member Main(args: string []) : seq<string> = 
+                            seq { yield "Foo" }""" // Add expected F# syntax here
 
         let placeholderFilename = "/home/user/Test.fsx"
         let tree = TreeOps.getUntypedTree(placeholderFilename, input)

@@ -52,6 +52,8 @@ module FormatOuput =
         }
 
     let santizeCode methodNames expr = 
+
+        let e = 
             expr
             |> simplifyTree
             |> rewriteReturnInIf 
@@ -62,7 +64,10 @@ module FormatOuput =
             |> rewriteMethodWithPrefix methodNames
             |> fixCsharpReservedNames
             |> rewriteActionOrFuncToUseCallInvoke
-
+        match shouldWrapInSeq e with 
+        | true -> Expr.App (ExprAtomicFlag.NonAtomic, false, toLongIdent "seq", Expr.CompExpr (false, ref false, e))
+        | false -> e
+        
     let toMethod className methodNames (x:Method) = 
         let methodName = 
             if x.IsStatic 
@@ -442,6 +447,7 @@ let toFsharpString config parseInput =
                    member this.Foo() = Console.WriteLine('\n')"""
 
         let tree = CodeFormatter.FormatAST(parseInput, DefaultNames.file, Some source, config) 
+        printfn "\n%s" tree
         let tree = CodeFormatter.FormatDocument(DefaultNames.file, tree, config)
 
         tree

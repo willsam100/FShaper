@@ -478,6 +478,11 @@ module TreeOps =
             | Expr.LongIdent (a, b) when (joinLongIdentWithDots b).StartsWith "@" -> Expr.LongIdent (a, (joinLongIdentWithDots b).Substring(1) |> toLongIdentWithDots) |> Some
             | e -> None) tree
 
+    let shouldWrapInSeq tree = 
+        containsExpr (function 
+            | Expr.YieldOrReturn ((true,_), _) -> true
+            | _ -> false) tree
+
     let replaceDotGetIfNotInLetBinding tree = 
 
         let rec walker tree = 
