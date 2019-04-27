@@ -3,6 +3,7 @@ namespace Tests
 open NUnit.Framework
 open FSharper.Core
 open FsUnit
+open System
 
 [<TestFixture>]
 type TestClass () =
@@ -43,7 +44,7 @@ type TestClass () =
              """open System
                 
                 type Program() =
-                    static member this.Main(args: string []) = Console.WriteLine("Hello, World")"""
+                    static member Main(args: string []) = Console.WriteLine("Hello, World")"""
                    
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
@@ -162,6 +163,44 @@ type TestClass () =
         let fsharp = 
              """i <- n
                     c.[i] <- c.[i] - 1"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``modulo operation`` () = 
+        let csharp = 
+             """int Foo() { c[i] % n; }"""
+
+        let fsharp = 
+             """member this.Foo(): int = c.[i] % n"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``yeild statment`` () = 
+        let csharp = 
+             """IEnumerable<int> Foo() { yield return 10; }"""
+
+        let fsharp = 
+             """member this.Foo(): seq<int> = yield 10"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``conditional statment`` () = 
+        let csharp = 
+             """string Foo() { return (c == 1 ? "" : "s"); }"""
+
+        let fsharp = 
+             """member this.Foo(): string =
+                    if c = 1 then ""
+                    else "s" """
                    
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
@@ -328,15 +367,15 @@ type TestClass () =
                 open Firebase.Iid
                 open System
                 open Android.App
-            
-                [<Service(); IntentFilter([| "com.google.firebase.INSTANCE_ID_EVENT" |])>]
+
+                [<Service; IntentFilter([| "com.google.firebase.INSTANCE_ID_EVENT" |])>]
                 type MyFirebaseIIDService() =
                     inherit FirebaseInstanceIdService()
                     let TAG = "MyFirebaseIIDService"
 
                     member this.OnTokenRefresh() =
                         let mutable refreshedToken = FirebaseInstanceId.Instance.Token
-                        Log.Debug(TAG, "Refreshed token: " + refreshedToken)
+                        Log.Debug(TAG, "Refreshed token: " + (refreshedToken.ToString()))
                         this.SendRegistrationToServer(refreshedToken)
                 
                     member this.SendRegistrationToServer(token: string) = ()"""
@@ -385,8 +424,10 @@ type TestClass () =
                     intent.AddFlags(ActivityFlags.ClearTop)
                     let mutable pendingIntent = PendingIntent.GetActivity(this, 0, intent, PendingIntentFlags.OneShot)
                     let mutable notificationBuilder =
-                        new Notification.Builder(this).SetContentTitle("FCM Message").SetSmallIcon(Resource.Drawable.ic_launcher)
-                            .SetContentText(messageBody).SetAutoCancel(true).SetContentIntent(pendingIntent)
+                        (new Notification.Builder(this)).SetContentTitle("FCM Message").SetSmallIcon(Resource.Drawable.ic_launcher)
+                            .SetContentText(messageBody)
+                            .SetAutoCancel(true)
+                            .SetContentIntent(pendingIntent)
                     let mutable notificationManager = NotificationManager.FromContext(this)
                     notificationManager.Notify(0, notificationBuilder.Build())"""
                    
@@ -421,8 +462,8 @@ type TestClass () =
                 }"""
 
         let fsharp = 
-             """member this.CreateContextMenu(entrySet: CodeFixMenu) =
-                    _menuItem.Clicked.AddHandler<_> (fun (sender, e) -> sender.Foo())"""
+             """member this.CreateContextMenu(entrySet: CodeFixMenu): ContextMenu =
+                    _menuItem.Clicked.AddHandler<_>(fun (sender, e) -> sender.Foo())"""
                    
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
@@ -445,7 +486,7 @@ type TestClass () =
                 }"""
 
         let fsharp = 
-             """member this.Foo() =
+             """member this.Foo(): int =
                     if x then
                         SomeAction()
                         0
@@ -468,7 +509,7 @@ type TestClass () =
                 }"""
 
         let fsharp = 
-             """member this.Foo() =
+             """member this.Foo(): int =
                     if x then 0
                     else
                         Bar()
@@ -531,7 +572,7 @@ type TestClass () =
                 }"""
 
         let fsharp = 
-             """member this.Foo() =
+             """member this.Foo(): int =
                     if x then 0
                     else
                         Baz()
@@ -589,11 +630,10 @@ type TestClass () =
                 }"""
 
         let fsharp = 
-             """member this.IsPlayServicesAvailable() =
+             """member this.IsPlayServicesAvailable(): bool =
                     let mutable resultCode = GoogleApiAvailability.Instance.IsGooglePlayServicesAvailable(this)
                     if resultCode <> ConnectionResult.Success then
-                        if GoogleApiAvailability.Instance
-                            .IsUserResolvableError(resultCode) then
+                        if GoogleApiAvailability.Instance.IsUserResolvableError(resultCode) then
                             msgText.Text <- GoogleApiAvailability.Instance.GetErrorString(resultCode)
                         else
                             msgText.Text <- "This device is not supported"
@@ -617,7 +657,7 @@ type TestClass () =
 
         let fsharp = 
              """member this.Include(changed: INotifyCollectionChanged) =
-                    changed.CollectionChanged.AddHandler<_> (fun (s, e) ->
+                    changed.CollectionChanged.AddHandler<_>(fun (s, e) ->
                         let mutable test =
                             sprintf "Args: %O%O%O, Index: %O" (e.Action) (e.NewItems) (e.OldItems) (e.OldStartingIndex)
                         ())"""
@@ -656,11 +696,6 @@ type TestClass () =
                 public void Include(CheckBox checkBox)
                 {
                     checkBox.CheckedChange += (sender, args) => checkBox.Checked = !checkBox.Checked;
-                }
-
-                public void Include(Switch @switch)
-                {
-                    @switch.CheckedChange += (sender, args) => @switch.Checked = !@switch.Checked;
                 }
 
                 public void Include(View view)
@@ -780,48 +815,46 @@ type TestClass () =
 
                 [<Android.Runtime.Preserve(AllMembers = true)>]
                 type LinkerPleaseInclude() =
-                    member this.Include(button: Button) = button.Click.AddHandler<_> (fun (s, e) -> button.Text <- button.Text + "")
+                    member this.Include(button: Button) = button.Click.AddHandler<_>(fun (s, e) -> button.Text <- button.Text + "")
                     member this.Include(checkBox: CheckBox) =
-                        checkBox.CheckedChange.AddHandler<_> (fun (sender, args) -> checkBox.Checked <- not checkBox.Checked)
-                    member this.Include((@switch): Switch) =
-                        (@switch.CheckedChange).AddHandler<_> (fun (sender, args) -> ``@switch``.Checked <- not (@switch).Checked)
+                        checkBox.CheckedChange.AddHandler<_>(fun (sender, args) -> checkBox.Checked <- not checkBox.Checked)
                     member this.Include(view: View) =
-                        view.Click.AddHandler<_> (fun (s, e) -> view.ContentDescription <- view.ContentDescription + "")
+                        view.Click.AddHandler<_>(fun (s, e) -> view.ContentDescription <- view.ContentDescription + "")
 
                     member this.Include(text: TextView) =
-                        text.AfterTextChanged.AddHandler<_> (fun (sender, args) -> text.Text <- "" + text.Text)
+                        text.AfterTextChanged.AddHandler<_>(fun (sender, args) -> text.Text <- "" + text.Text)
                         text.Hint <- "" + text.Hint
 
                     member this.Include(text: CheckedTextView) =
-                        text.AfterTextChanged.AddHandler<_> (fun (sender, args) -> text.Text <- "" + text.Text)
+                        text.AfterTextChanged.AddHandler<_>(fun (sender, args) -> text.Text <- "" + text.Text)
                         text.Hint <- "" + text.Hint
 
                     member this.Include(cb: CompoundButton) =
-                        cb.CheckedChange.AddHandler<_> (fun (sender, args) -> cb.Checked <- not cb.Checked)
+                        cb.CheckedChange.AddHandler<_>(fun (sender, args) -> cb.Checked <- not cb.Checked)
                     member this.Include(sb: SeekBar) =
-                        sb.ProgressChanged.AddHandler<_> (fun (sender, args) -> sb.Progress <- sb.Progress + 1)
+                        sb.ProgressChanged.AddHandler<_>(fun (sender, args) -> sb.Progress <- sb.Progress + 1)
                     member this.Include(radioGroup: RadioGroup) =
-                        radioGroup.CheckedChange.AddHandler<_> (fun (sender, args) -> radioGroup.Check(args.CheckedId))
+                        radioGroup.CheckedChange.AddHandler<_>(fun (sender, args) -> radioGroup.Check(args.CheckedId))
                     member this.Include(radioButton: RadioButton) =
-                        radioButton.CheckedChange.AddHandler<_> (fun (sender, args) -> radioButton.Checked <- args.IsChecked)
+                        radioButton.CheckedChange.AddHandler<_>(fun (sender, args) -> radioButton.Checked <- args.IsChecked)
                     member this.Include(ratingBar: RatingBar) =
-                        ratingBar.RatingBarChange.AddHandler<_> (fun (sender, args) -> ratingBar.Rating <- 0 + ratingBar.Rating)
+                        ratingBar.RatingBarChange.AddHandler<_>(fun (sender, args) -> ratingBar.Rating <- 0 + ratingBar.Rating)
                     member this.Include(act: Activity) = act.Title <- act.Title + ""
 
                     member this.Include(changed: INotifyCollectionChanged) =
-                        changed.CollectionChanged.AddHandler<_> (fun (s, e) ->
+                        changed.CollectionChanged.AddHandler<_>(fun (s, e) ->
                             let mutable test = sprintf "%O%O%O%O" (e.Action) (e.NewItems) (e.NewStartingIndex) (e.OldItems)
                             ())
 
                     member this.Include(command: ICommand) =
-                        command.CanExecuteChanged.AddHandler<_> (fun (s, e) ->
+                        command.CanExecuteChanged.AddHandler<_>(fun (s, e) ->
                             if command.CanExecute(null) then command.Execute(null))
 
                     member this.Include(injector: MvvmCross.IoC.MvxPropertyInjector) =
                         injector <- new MvvmCross.IoC.MvxPropertyInjector()
 
                     member this.Include(changed: System.ComponentModel.INotifyPropertyChanged) =
-                        changed.PropertyChanged.AddHandler<_> (fun (sender, e) ->
+                        changed.PropertyChanged.AddHandler<_>(fun (sender, e) ->
                             let mutable test = e.PropertyName
                             ())
 
@@ -872,7 +905,7 @@ type TestClass () =
     [<Test>]
     member this.``convert class with interface beginning with I as interface`` () = 
         let csharp = 
-             """public class Foo : IDisposable
+             """public class Foo : IDisp
                 {
                     public void Dispose()
                     {
@@ -883,7 +916,7 @@ type TestClass () =
         let fsharp = 
              """type Foo() =
                     member this.Dispose() = FooBar()
-                    interface IDisposable with
+                    interface IDisp with
                         member this.Todo() = ()"""
 
         csharp |> Converter.run 
@@ -932,7 +965,7 @@ type TestClass () =
                 }"""
 
         let fsharp = 
-             """member this.Foo(myList: IEnumerable<int>) =
+             """member this.Foo(myList: seq<int>): int =
                     let mutable x = 0
                     for i in myList do
                         if x >= 10 then ()
@@ -960,7 +993,7 @@ type TestClass () =
                 }"""
 
         let fsharp = 
-             """member this.Foo(myList: IEnumerable<int>) =
+             """member this.Foo(myList: seq<int>): int =
                     let mutable x = 0
                     for i in myList do
                         if x = 10 then ()
@@ -1057,12 +1090,11 @@ type TestClass () =
                 }"""
     
         let fsharp = 
-             """member this.CreateContextMenu(entrySet: CodeFixMenu) =
+             """member this.CreateContextMenu(entrySet: CodeFixMenu): ContextMenu =
                     let mutable menu = new ContextMenu()
                     for item in entrySet.Items do
                         if item = CodeFixMenuEntry.Separator then
-                            menu.Items
-                                .Add(new SeparatorContextMenuItem())
+                            menu.Items.Add(new SeparatorContextMenuItem())
                             ()
                         else
                             let mutable _menuItem = new ContextMenuItem(item.Label)
@@ -1074,22 +1106,20 @@ type TestClass () =
                             else
                                 let mutable subMenu = item :?> CodeFixMenu
                                 if subMenu <> null then
-                                    _menuItem.SubMenu <- CreateContextMenu(subMenu)
-                                    _menuItem.Selected.AddHandler<_>
-                                        (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
+                                    _menuItem.SubMenu <- this.CreateContextMenu(subMenu)
+                                    _menuItem.Selected.AddHandler<_>(fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
                                     _menuItem.Deselected.AddHandler<_>
                                         (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
                                 else
                                     _menuItem.Clicked.AddHandler<_>
                                         (fun (sender, e) -> ((sender :?> ContextMenuItem).Context :?> System.Action).Invoke())
-                                    _menuItem.Selected.AddHandler<_> (fun (sender, e) ->
+                                    _menuItem.Selected.AddHandler<_>(fun (sender, e) ->
                                         RefactoringPreviewTooltipWindow.HidePreviewTooltip()
                                         if item.ShowPreviewTooltip <> null then item.ShowPreviewTooltip(e))
                                     _menuItem.Deselected.AddHandler<_>
                                         (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
-                                menu.Items
-                                    .Add(_menuItem)
-                    menu.Closed.AddHandler<_> (fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
+                                menu.Items.Add(_menuItem)
+                    menu.Closed.AddHandler<_>(fun () -> RefactoringPreviewTooltipWindow.HidePreviewTooltip())
                     menu"""
                    
         csharp |> Converter.run 
@@ -1135,7 +1165,7 @@ type TestClass () =
                 }"""
     
         let fsharp = 
-             """member this.CreateContextMenu(entrySet: obj) = (entrySet :?> Func<int>).Invoke()"""
+             """member this.CreateContextMenu(entrySet: obj): int = (entrySet :?> Func<int>).Invoke()"""
                    
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
@@ -1150,8 +1180,8 @@ type TestClass () =
                 }"""
     
         let fsharp = 
-             """member this.CreateContextMenu(entrySet: obj) = (entrySet :?> Func<int, int>).Invoke(42)"""
+             """member this.CreateContextMenu(entrySet: obj): int = (entrySet :?> Func<int, int>).Invoke(42)"""
                    
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)   
+        |> should equal (formatFsharp fsharp)

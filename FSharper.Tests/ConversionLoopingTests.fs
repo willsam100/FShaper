@@ -96,9 +96,7 @@ type LoopngTests () =
              """member this.coef (n: int) =
                     let mutable i = Unchecked.defaultof<int>
                     let mutable j = Unchecked.defaultof<int>
-                    if n < 0 || n > 63 then
-                        System.Environment
-                            .Exit(0)
+                    if n < 0 || n > 63 then System.Environment.Exit(0)
                     else
                         i <- 0
                         c.[i] <- 1L
@@ -113,3 +111,85 @@ type LoopngTests () =
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
 
+    [<Test>]
+    member this.``simple while loop`` () = 
+        let csharp = 
+             """void Loop()
+                {
+                    int i = 10;
+                    while (i >= 1)
+                    {
+                        i--;
+                        Console.WriteLine($"{i}");
+                    }
+                }"""
+
+        let fsharp = 
+             """member this.Loop() =
+                    let mutable i = 10
+                    while i >= 1 do
+                        i <- i - 1
+                        Console.WriteLine(sprintf "%O" (i))"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``simple while loop with preincrement`` () = 
+        let csharp = 
+             """void Loop()
+                {
+                    while (--i >= 1)
+                        Console.WriteLine($"{i}");
+                }"""
+
+        let fsharp = 
+             """member this.Loop() =
+                    i <- i - 1
+                    while i >= 1 do
+                        Console.WriteLine(sprintf "%O" (i))
+                        i <- i - 1"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``simple while loop with postincrement`` () = 
+        let csharp = 
+             """void Loop()
+                {
+                    while (i-- >= 1)
+                        Console.WriteLine($"{i}");
+                }"""
+
+        let fsharp = 
+             """member this.Loop() =
+                    while i >= 1 do
+                        i <- i - 1
+                        Console.WriteLine(sprintf "%O" (i))"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``for loop with long ident for condition and preincrement`` () = 
+        let csharp = 
+             """void Foo() 
+                {
+                    for(int i = 0; i < word.Length; ++i)
+                    {
+                        Console.WriteLine($"{i}");
+                    }
+                }"""
+
+        let fsharp = 
+             """member this.Foo() =
+                    for i = 0 to word.Length do
+                        Console.WriteLine(sprintf "%O" (i))"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)

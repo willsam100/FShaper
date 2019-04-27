@@ -41,7 +41,7 @@ module FormatOuput =
             Name = DefaultNames.method
             Parameters = []
             Body = x
-            ReturnType = "void"
+            ReturnType = SynType.StaticConstant (SynConst.Unit, range0)
             IsVirtual = false
             IsAsync = false
             IsPrivate = false
@@ -60,6 +60,7 @@ module FormatOuput =
             |> rewriteInLetExp 
             |> wrapNewKeyword
             |> rewriteMethodWithPrefix methodNames
+            |> fixCsharpReservedNames
             |> rewriteActionOrFuncToUseCallInvoke
 
     let toMethod className methodNames (x:Method) = 
@@ -71,15 +72,15 @@ module FormatOuput =
         let argInfos = 
             let args = 
                 x.Parameters |> List.map (fun x -> SynArgInfo ([],false, Ident(x.Name, range0) |> Some  ) )
-            let returnArgInfo = SynArgInfo ([],false, Ident(x.ReturnType, range0) |> Some  ) 
-            [returnArgInfo] :: [args]
+            //let returnArgInfo = SynArgInfo ([],false, x.ReturnType  ) 
+            [args]
 
         let namedArgs = 
             let typeArgs = 
                 x.Parameters |> List.map (fun x -> 
                     SynPat.Typed (
-                        SynPat.Named (SynPat.Wild range0, Ident(x.Name, range0), false, None, range0), x.Type,  
-                        range0) )
+                        SynPat.Named (SynPat.Wild range0, Ident(x.Name, range0), false, None, range0), 
+                                        x.Type, range0) )
             SynPat.Paren (SynPat.Tuple (typeArgs, range0), range0)
 
         let attributres = 
@@ -96,9 +97,16 @@ module FormatOuput =
                 }
             )
 
-        let trandformedTree = santizeCode methodNames x.Body
+        let trandformedTree = 
+            let t = santizeCode methodNames x.Body
+            match x.ReturnType with 
+            | SynType.LongIdent (x) when joinLongIdentWithDots x = "unit" -> t
+            | _ ->  Expr.Typed (t, x.ReturnType)
+            
         printfn "Transformed Tree:"
         printfn "%A" trandformedTree
+
+        let returnType = SynBindingReturnInfo.SynBindingReturnInfo (x.ReturnType, range0, [])
 
         SynMemberDefn.Member 
             (SynBinding.Binding ( x.Accessibility, SynBindingKind.NormalBinding, false, false, attributres,
@@ -114,7 +122,7 @@ module FormatOuput =
                 SynPat.LongIdent
                     (methodName, None, None, 
                     Pats [namedArgs], None, range0 ), 
-                None, 
+                Some returnType, 
                 trandformedTree |> toSynExpr,
                 range0, 
                 NoSequencePointAtInvisibleBinding
@@ -305,7 +313,7 @@ module FormatOuput =
                     Method.IsStatic = false
                     Method.Parameters = []
                     Method.Attributes = []
-                    Method.ReturnType = "void"
+                    Method.ReturnType = SynType.LongIdent (toLongIdentWithDots "unit")
                 }
 
                 SynMemberDefn.Interface (x,method |> toMethod None [] |> List.singleton |> Some, range0))
@@ -433,7 +441,8 @@ let toFsharpString config parseInput =
              """type Klass067803f4-3f6e-11e9-b4df-6f8305ceb4a6() =  
                    member this.Foo() = Console.WriteLine('\n')"""
 
-        let tree = CodeFormatter.FormatAST(parseInput, DefaultNames.file, Some source, { FormatConfig.Default with StrictMode = false}) 
+        let tree = CodeFormatter.FormatAST(parseInput, DefaultNames.file, Some source, config) 
+        let tree = CodeFormatter.FormatDocument(DefaultNames.file, tree, config)
 
         tree
         |> removeDefaultScaffolding

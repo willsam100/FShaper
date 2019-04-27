@@ -32,7 +32,7 @@ type ConverstionCsharpIsPatternMatching () =
                 }"""
 
         let fsharp = 
-             """member this.Foo(item: obj) =
+             """member this.Foo(item: obj): CodeFixMenu =
                     match item with
                     | :? CodeFixMenu as itemAsMenu -> itemAsMenu
                     | _ -> null"""
@@ -111,7 +111,7 @@ type ConverstionCsharpIsPatternMatching () =
                 }"""
 
         let fsharp = 
-             """member this.Foo(item: obj) =
+             """member this.Foo(item: obj): obj =
                     match item with
                     | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items <> null && itemAsMenu.Items.Count > 0 -> ()
                     | _ -> _menuItem.Sensitive <- false
@@ -177,7 +177,7 @@ type ConverstionCsharpIsPatternMatching () =
                 }"""
 
         let fsharp = 
-             """member this.Foo(foo: obj, bar: obj) =
+             """member this.Foo(foo: obj, bar: obj): string =
                     match foo, bar with
                     | :? string as fooString, :? string as barString -> fooString + barString
                     | _ -> null"""
@@ -199,7 +199,7 @@ type ConverstionCsharpIsPatternMatching () =
                 }"""
 
         let fsharp = 
-             """member this.Foo(foo: obj, bar: obj) =
+             """member this.Foo(foo: obj, bar: obj): string =
                     match foo, bar with
                     | :? string as fooString, :? string as barString when barString.Length > 5 && fooString.Length < 10 ->
                         fooString + barString

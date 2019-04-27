@@ -69,7 +69,7 @@ module TreeOps =
         | Expr.Tuple xs -> SynExpr.Tuple (xs |> List.map toSynExpr, [range0], range0) 
 
         | Expr.New (isProtected, typeName, expr) -> SynExpr.New (isProtected, typeName, toSynExpr expr, range0)
-        //| While of whileSeqPoint:SequencePointInfoForWhileLoop * whileExpr:Expr * doExpr:Expr
+        | Expr.While (a,b,c) -> SynExpr.While  (a, toSynExpr b, toSynExpr c, range0)
         | Expr.For (a,b,c,d,e,f ) -> SynExpr.For (a,b,toSynExpr c,d, toSynExpr e, toSynExpr f, range0)
 
         | Expr.ForEach (a,b,c,d,e,f) -> SynExpr.ForEach (a,b,c,toSynPat d,toSynExpr e, toSynExpr f,range0)
@@ -117,6 +117,8 @@ module TreeOps =
 
         //| InferredDowncast of  expr:Expr 
         | Expr.Null -> SynExpr.Null range0
+
+        | Expr.YieldOrReturn (a,b) -> SynExpr.YieldOrReturn (a, toSynExpr b, range0)
         //| AddressOf of  isByref:bool * Expr 
         //| TraitCall of SynTypar list * SynMemberSig * Expr 
         //| LetOrUseBang    of bindSeqPoint:SequencePointInfoForBinding * isUse:bool * isFromSource:bool * SynPat * Expr * Expr
@@ -160,6 +162,7 @@ module TreeOps =
         | Expr.Lambda (a,b,c,d) -> containsExpr d
 
         | Expr.Paren e -> containsExpr e
+        | Expr.While (a,b,c) -> containsExpr b || containsExpr c
 
         | x when f x -> true
         | _ -> false
@@ -186,6 +189,8 @@ module TreeOps =
             | SynExpr.Match (a,b,c,d,f) -> SynExpr.Match (a, replaceSynExpr b,c,d,f)
             | SynExpr.Lambda (a,b,c,d,e) -> SynExpr.Lambda (a,b,c, replaceSynExpr d,e)
             | SynExpr.Paren (e,a,b,c) -> replaceSynExpr e |> (fun e -> SynExpr.Paren (e,a,b,c))
+            | SynExpr.While (a,b,c,d) -> SynExpr.While (a, replaceSynExpr b, replaceSynExpr c,d)
+            | SynExpr.YieldOrReturn (a, b, c) -> SynExpr.YieldOrReturn (a, replaceSynExpr b, c)
             | e -> e
 
     let rewriteReturnInIf tree = 
@@ -460,17 +465,18 @@ module TreeOps =
         replaceExpr walker tree
 
     let wrapNewKeyword tree = 
-        let rec wrapNewInParen = 
-            replaceExpr (fun tree ->
-                match tree with 
-                | Expr.New (a,b,c) -> Expr.Paren (Expr.New (a,b,c)) |> Some
-                | _ -> None)
+        replaceExpr (fun tree ->
+            match tree with 
+            //| Expr.New (a,b,c) -> Expr.Paren (Expr.New (a,b,c)) |> Some
+            | Expr.DotGet (Expr.New (a,b,c), d) -> Expr.DotGet (Expr.Paren (Expr.New (a,b,c)) ,d) |> Some
+            | e -> None) tree
 
-        let rec walker tree = 
-            match tree with
-            | Expr.DotGet (a,b) -> Expr.DotGet (wrapNewInParen a,b) |> Some
-            | _ -> None
-        replaceExpr walker tree
+    let fixCsharpReservedNames tree = 
+        replaceExpr (fun tree ->
+            match tree with 
+            //| Expr.New (a,b,c) -> Expr.Paren (Expr.New (a,b,c)) |> Some
+            | Expr.LongIdent (a, b) when (joinLongIdentWithDots b).StartsWith "@" -> Expr.LongIdent (a, (joinLongIdentWithDots b).Substring(1) |> toLongIdentWithDots) |> Some
+            | e -> None) tree
 
     let replaceDotGetIfNotInLetBinding tree = 
 
@@ -602,6 +608,7 @@ module TreeOps =
             | SynExpr.For (a,b,c,d,e,f,g) -> SynExpr.For (a,b,c,d,e,f,g)
             | SynExpr.DotIndexedGet (a,b,c,d) -> SynExpr.DotIndexedGet (a,b,c,d)
             | SynExpr.DotIndexedSet (a,b,c,d,f,g) -> SynExpr.DotIndexedSet (a,b,c,d,f,g)
+            | SynExpr.While (a,b,c,d) -> SynExpr.While (a,b,c,d)
 
         let walker tree = 
             match tree with 

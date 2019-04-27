@@ -9,7 +9,7 @@ open System.Text.RegularExpressions
 [<EntryPoint>]
 let main argv =
 
-    let printFsharpTree = false
+    let printFsharpTree = true
 
     if not printFsharpTree then 
         let input = System.Console.In.ReadToEnd()
@@ -19,8 +19,8 @@ let main argv =
     // the syntax can then be used to idently how to construct it from the CSharp syntax
     else
         let input = 
-                 """type Bar() = 
-                        member this.Foo() = Console.WriteLine('\n')""" // Add expected F# syntax here
+                 """type Program() =
+                        static member Main(args: string []) : unit = Console.WriteLine("Hello, World")""" // Add expected F# syntax here
 
         let placeholderFilename = "/home/user/Test.fsx"
         let tree = TreeOps.getUntypedTree(placeholderFilename, input)

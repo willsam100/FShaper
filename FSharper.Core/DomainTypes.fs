@@ -245,7 +245,7 @@ and
     /// F# syntax: yield expr
     /// F# syntax: return expr
     /// Computation expressions only
-    //| YieldOrReturn   of (bool * bool) * expr:Expr
+    | YieldOrReturn of (bool * bool) * expr:Expr
 
     /// F# syntax: yield! expr
     /// F# syntax: return! expr
@@ -327,7 +327,7 @@ type Method = {
     Name:string
     Parameters:Parameter list
     Body: Expr
-    ReturnType:string
+    ReturnType:SynType
     IsVirtual:bool
     IsAsync:bool
     IsPrivate: bool
