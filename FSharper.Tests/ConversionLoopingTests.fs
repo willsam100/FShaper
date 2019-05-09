@@ -67,7 +67,7 @@ type LoopngTests () =
              """member this.Foo() =
                     let mutable i = Unchecked.defaultof<int>
                     let mutable j = Unchecked.defaultof<int>
-                    let mutable c = Array.zeroCreate<int64> 100
+                    let mutable c = Array.zeroCreate<int64> (100)
                     i <- 1
                     c.[i] <- 1L
                     for i = 1 to n do
@@ -108,6 +108,23 @@ type LoopngTests () =
                             c.[0] <- -c.[0]"""
                    
         csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert ushort cast`` () = 
+        let csharp = 
+             """public void Main() {
+                    for (ushort ctr = (ushort)'a'; ctr <= (ushort) 'z'; ctr++)
+                        sb.Append(Convert.ToChar(ctr), 4); 
+                }"""
+    
+        let fsharp = 
+             """member this.Main() =
+                    for ctr = (int 'a') to (int 'z') do
+                        sb.Append(Convert.ToChar(ctr), 4)"""
+
+        csharp |> Converter.runWithConfig false 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
 

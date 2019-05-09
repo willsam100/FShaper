@@ -21,8 +21,6 @@ module ExprOps =
 [<AutoOpen>]
 module ParserUtil = 
     let toSingleIdent (s:string) = Ident(s, range0)
-    
-    
 
 
     let rec replaceExpr f tree = 
@@ -119,6 +117,7 @@ module ParserUtil =
         | "long" -> "int64"
         | "IEnumerable" -> "seq"
         | "void" -> "unit"
+        | "ushort" -> "uint16"
         | x -> x
 
     let toIdent (s:string) = 
@@ -166,7 +165,7 @@ module ParserUtil =
 
     let rec parseType (t: TypeSyntax) = 
         match t with 
-        | :? ArrayTypeSyntax as ats -> 
+        | :? ArrayTypeSyntax as ats ->             
             let a = ats.ElementType.WithoutTrivia().ToString() |> fixKeywords 
             SynType.Array (1, toLongIdentWithDots (sprintf "%s" a) |> SynType.LongIdent, range0)
         
@@ -464,6 +463,7 @@ type CSharpStatementWalker() =
 
         match node.Kind() with 
         | SyntaxKind.AddExpression -> PrettyNaming.CompileOpName "+" |> createLogicalExpression
+        | SyntaxKind.MultiplyExpression -> PrettyNaming.CompileOpName "*" |> createLogicalExpression
         | SyntaxKind.SubtractExpression -> PrettyNaming.CompileOpName "-" |> createLogicalExpression
         | SyntaxKind.LogicalAndExpression -> PrettyNaming.CompileOpName "&&" |> createLogicalExpression
         | SyntaxKind.LogicalOrExpression -> PrettyNaming.CompileOpName "||" |> createLogicalExpression 
@@ -712,6 +712,11 @@ type CSharpStatementWalker() =
         //| :? FixedStatementSyntax as x -> "FixedStatement" |> toLongIdent
         | :? ForStatementSyntax as x -> 
 
+            let replaceCastToInt node = 
+                node |> replaceExpr  (function 
+                            | Expr.Downcast (e, _) -> Expr.App (ExprAtomicFlag.NonAtomic, false, toLongIdent "int", e) |> Some
+                            | _ -> None)
+
             let varAndstartValue = 
                 x.Declaration 
                 |> Option.ofObj 
@@ -724,16 +729,14 @@ type CSharpStatementWalker() =
                         match CSharpStatementWalker.ParseToken x.Identifier with 
                         | Expr.Ident x -> toSingleIdent x |> Some
                         | Expr.LongIdent (_, s) -> s |> joinLongIdentWithDots |> toSingleIdent |> Some
-                        | e -> printfn "VAR: %A" e; None
-    
-                    let init = 
-                        match CSharpStatementWalker.ParseExpression x.Initializer.Value with 
-                        | Expr.Const _ as e -> Some e
-                        | e -> printfn "INIT: %A" e; None
+                        | e -> None
 
-                    match var, init with 
-                    | Some a, Some b -> Some (a,b)
-                    | _, _ -> None
+                    let init = 
+                        CSharpStatementWalker.ParseExpression x.Initializer.Value |> replaceCastToInt
+
+                    match var with 
+                    | Some a  -> Some (a,init)
+                    | _ -> None
                 | _ -> None
 
             let endValue = 
@@ -747,6 +750,7 @@ type CSharpStatementWalker() =
                 | BinaryOp (left,"op_GreaterThan",Expr.Const (SynConst.Int32 a)) -> 
                     a + 1 |> SynConst.Int32 |> Expr.Const |> Some // Add one since it is >
                 | BinaryOp (left,op,Expr.Const a) when List.contains op validOps -> Expr.Const a |> Some
+                | BinaryOp (left,op, a) when List.contains op validOps -> a |> replaceCastToInt |> Some
                 | e -> printfn "END: %A" e; None
 
             let isIncrement = 
@@ -867,17 +871,32 @@ type CSharpStatementWalker() =
                 CSharpStatementWalker.ParseExpression x.Expression |> Expr.ReturnFromIf
         //| :? SwitchStatementSyntax as x -> "SwitchStatement" |> toLongIdent
         //| :? ThrowStatementSyntax as x -> "ThrowStatement" |> toLongIdent
-        //| :? TryStatementSyntax as x -> "TryStatement" |> toLongIdent
+        | :? TryStatementSyntax as x -> 
+
+            let catches = 
+                x.Catches 
+                |> Seq.toList
+                |> List.map (fun x -> 
+                    let t = x.Declaration.Type |> ParserUtil.parseType
+                    let name = x.Declaration.Identifier.WithoutTrivia().ToFullString() |> toSingleIdent
+                    let expr = CSharpStatementWalker.ParseChsarpNode x.Block
+                    MatchClause.Clause (SynPat.Named (SynPat.IsInst (t, range0), name, false, None, range0), None, expr) )   
+
+            Expr.TryWith (CSharpStatementWalker.ParseChsarpNode x.Block, catches, 
+                SequencePointInfoForTry.NoSequencePointAtTry, SequencePointInfoForWith.NoSequencePointAtWith)
+            
         //| :? UnsafeStatementSyntax as x -> "UnsafeStatement" |> toLongIdent
         | :? UsingStatementSyntax as x -> 
+
+            let (init, name) = x.Declaration.Variables |> Seq.head |> (fun x -> 
+                CSharpStatementWalker.ParseChsarpNode x.Initializer, x.Identifier.ValueText |> toSingleIdent)
 
             let var = 
                 FSharpBinding.LetBind 
                     (
                         None, SynBindingKind.NormalBinding, false, false, [], 
                         SynValData (None, SynValInfo ([], SynArgInfo ([], false, None )), None), 
-                        Pat.Named (Pat.Wild, Ident("_", range0), false, None), 
-                        x.Expression |> CSharpStatementWalker.ParseChsarpNode)
+                        Pat.Named (Pat.Wild, name, false, None), init)
             let s = x.Statement |> CSharpStatementWalker.ParseChsarpNode
 
             Expr.LetOrUse (false, true, [var], s)
@@ -886,33 +905,47 @@ type CSharpStatementWalker() =
             let body = CSharpStatementWalker.ParseStatementSyntax x.Statement |> replaceAnyPostOrPreIncrement
             let expr = CSharpStatementWalker.ParseExpressionWithVaribles x.Condition
 
-            let sequence = 
-                let walker tree = 
-                    match tree with 
-                    | Expr.Sequential(a,b,Expr.LongIdentSet (c,d), cond) -> Some tree
-                    | Expr.Sequential(a,b, cond, Expr.LongIdentSet (c,d)) -> Some tree
-                    | _ -> None
-                getFirstExpr walker expr
+            match containsExpr (function | Expr.LongIdentSet _ -> true | _ -> false) expr with 
+            | [Expr.LongIdentSet(x,y)] -> 
 
-            let replaceSequence node = 
-                let walker tree = 
-                    match tree with 
-                    | Expr.Sequential(a,b,Expr.LongIdentSet (c,d), cond) -> Some cond
-                    | Expr.Sequential(a,b, cond, Expr.LongIdentSet (c,d)) -> Some cond
-                    | _ -> None
-                replaceExpr walker node
-            
-            match sequence with
-            | Some (Expr.Sequential(a,b,Expr.LongIdentSet (c,d), _)) -> 
-                let body = Expr.Sequential(a,b,body, Expr.LongIdentSet (c,d))
-                let w = Expr.While (SequencePointInfoForWhileLoop.NoSequencePointAtWhileLoop, replaceSequence expr, body)
-                Expr.Sequential(a,b,Expr.LongIdentSet (c,d), w)
+                let sequence = 
+                    let walker tree = 
+                        match tree with 
+                        | Expr.Sequential(a,b,Expr.LongIdentSet (c,d), cond) -> Some tree
+                        | Expr.Sequential(a,b, cond, Expr.LongIdentSet (c,d)) -> Some tree
+                        | _ -> None
+                    getFirstExpr walker expr
 
-            | Some (Expr.Sequential(a,b, cond, Expr.LongIdentSet (c,d))) -> 
-                let body = Expr.Sequential(a,b, Expr.LongIdentSet (c,d), body)
-                Expr.While (SequencePointInfoForWhileLoop.NoSequencePointAtWhileLoop, replaceSequence expr, body)
+                let replaceSequence node = 
+                    let walker tree = 
+                        match tree with 
+                        | Expr.Sequential(a,b,Expr.LongIdentSet (c,d), cond) -> Some cond
+                        | Expr.Sequential(a,b, cond, Expr.LongIdentSet (c,d)) -> Some cond
+                        | _ -> None
+                    replaceExpr walker node
+        
+                match sequence with
+                | Some (Expr.Sequential(a,b,Expr.LongIdentSet (c,d), _)) -> 
+                    let body = Expr.Sequential(a,b,body, Expr.LongIdentSet (c,d))
+                    let w = Expr.While (SequencePointInfoForWhileLoop.NoSequencePointAtWhileLoop, replaceSequence expr, body)
+                    Expr.Sequential(a,b,Expr.LongIdentSet (c,d), w)
+
+                | Some (Expr.Sequential(a,b, cond, Expr.LongIdentSet (c,d))) -> 
+
+                    let body = Expr.Sequential(a,b, Expr.LongIdentSet (c,d), body)
+                    Expr.While (SequencePointInfoForWhileLoop.NoSequencePointAtWhileLoop, replaceSequence expr, body)
+                | _ -> 
+                    let mutate = Expr.LongIdentSet(x,y)
+                    let body = Expr.Sequential (SequencePointInfoForSeq.SequencePointsAtSeq, false, body, mutate)
+
+                    let expr = replaceExpr (function | Expr.LongIdentSet(a,b) -> Expr.LongIdent( false, a) |> Some | _ -> None) expr
+
+                    let whileExpr = Expr.While (SequencePointInfoForWhileLoop.NoSequencePointAtWhileLoop, expr, body)
+                    Expr.Sequential (SequencePointInfoForSeq.SequencePointsAtSeq, false, mutate, whileExpr)
+
             | _ -> 
-                Expr.While (SequencePointInfoForWhileLoop.NoSequencePointAtWhileLoop,expr, body)
+                Expr.While (SequencePointInfoForWhileLoop.NoSequencePointAtWhileLoop, expr, body)
+                
 
         | :? YieldStatementSyntax as x -> 
             let e = CSharpStatementWalker.ParseExpression x.Expression
@@ -998,10 +1031,10 @@ type CSharpStatementWalker() =
         | :? TypeParameterConstraintSyntax as x -> "TypeParameterConstraint" |> toLongIdent
         | :? TypeParameterListSyntax as x -> "TypeParameterList" |> toLongIdent
         | :? TypeParameterSyntax as x -> "TypeParameter" |> toLongIdent
-        //| :? UsingDirectiveSyntax as x ->  
+        | :? UsingDirectiveSyntax as x ->  
             //x.Name |> 
             //x.Name
-             //"UsingDirective" |> toLongIdent
+             "UsingDirective" |> toLongIdent
         | :? VariableDeclarationSyntax as x -> 
 
             x.Variables 
@@ -1166,22 +1199,12 @@ type CSharpStatementWalker() =
 
         //| :? AnonymousObjectCreationExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "AnonymousObjectCreationExpressionSyntax"
         | :? ArrayCreationExpressionSyntax as x -> 
-            let t = 
-                match ParserUtil.parseType x.Type with 
-                | SynType.Array (a,b,c) -> 
-                    match b with 
-                    | SynType.LongIdent (LongIdentWithDots (s,_)) -> 
-                        s 
-                        |> List.filter (fun x -> x.idText <> "[]") 
-                        |> (fun x -> LongIdentWithDots (x, []))
-                        |> SynType.LongIdent
-                    | e -> e
-                | e -> e
-
+            let size = x.Type.RankSpecifiers |> Seq.head |> (fun x -> x.Sizes) |> Seq.toList |> List.map (CSharpStatementWalker.ParseExpression) |> List.head
+            let t = x.Type.ElementType.WithoutTrivia().ToString() |> fixKeywords  |> toLongIdentWithDots |> SynType.LongIdent
             let init = CSharpStatementWalker.ParseExpression x.Initializer
 
             let typeApp = Expr.TypeApp (toLongIdent "Array.zeroCreate", [t] )
-            Expr.App (ExprAtomicFlag.NonAtomic, false, typeApp, SynConst.Int32 100 |> Expr.Const)
+            Expr.App (ExprAtomicFlag.NonAtomic, false, typeApp, Expr.Paren size)
             
         | :? AssignmentExpressionSyntax as x -> x |> CSharpStatementWalker.ParseAssignmentExpressionSyntax
         | :? AwaitExpressionSyntax as x -> 
@@ -1681,5 +1704,5 @@ type FSharperTreeBuilder() =
             | UsingStatement using1, UsingStatement using2 -> FileWithUsing ([using1; using2], []) |> File |> Some
             | UsingStatement using, Namespace ``namespace`` -> FileWithUsingNamespace ([using], [``namespace``]) |> File |> Some
             | UsingStatement using, Class name -> FileWithUsing ([using; ], [name]) |> File |> Some
-              
+
             //| _, _ -> sprintf "C# not supported: %A, %A" tree result |> failwith

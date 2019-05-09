@@ -5,8 +5,8 @@ open Microsoft.CodeAnalysis.CSharp
 open Fantomas.FormatConfig
 open Fantomas
 open FSharper.Core.TreeOps
-
-
+open System.Text
+open System.IO
 
 module FormatOuput = 
 
@@ -432,6 +432,9 @@ let removeDefaultScaffolding (fsharpOutput:string) =
     fsharpOutput
     |> (fun x -> x.Replace("namespace ``Program35949ae4-3f6e-11e9-b4dc-230deb73e77f``\n", ""))
     |> (fun x -> x.Replace("type ``Klass067803f4-3f6e-11e9-b4df-6f8305ceb4a6``() =\n", ""))
+
+    
+    
     |> (fun x -> x.Replace("module ``Program35949ae4-3f6e-11e9-b4dc-230deb73e77f``\n\n", ""))
     |> (fun x -> x.Replace("\"Program35949ae4-3f6e-11e9-b4dc-230deb73e77f\"\n", ""))
     |> (fun x -> x.Replace("member this.Method156143763f6e11e984e11f16c4cfd728() =\n", ""))
@@ -440,7 +443,7 @@ let removeDefaultScaffolding (fsharpOutput:string) =
     |> (fun x -> x.Replace("""\013""", "\\r"))
 
 
-let toFsharpString config parseInput = 
+let toFsharpString validateCode config parseInput = 
     if CodeFormatter.IsValidAST parseInput then
 
         let source = 
@@ -449,7 +452,13 @@ let toFsharpString config parseInput =
 
         let tree = CodeFormatter.FormatAST(parseInput, DefaultNames.file, Some source, config) 
         printfn "\n%s" tree
-        let tree = CodeFormatter.FormatDocument(DefaultNames.file, tree, config)
+        let tree = 
+            try
+                CodeFormatter.FormatDocument(DefaultNames.file, tree, config) 
+            with e -> 
+                if validateCode 
+                then raise e
+                else tree
 
         tree
         |> removeDefaultScaffolding
@@ -463,8 +472,7 @@ let toFsharpString config parseInput =
                 x.Split '\n' |> Array.map reduceIndent |> String.concat "\n" )
     else  "Bad F# syntax tree" 
 
-
-let run (input:string) = 
+let runWithConfig validateCode (input:string) = 
 
     let config = 
             {
@@ -478,11 +486,10 @@ let run (input:string) =
             }
 
     let tree = 
-        input
-        |> SyntaxFactory.ParseSyntaxTree
+        SyntaxFactory.ParseSyntaxTree (text = input, encoding = Encoding.UTF8)
         |> (fun x -> 
             let t = x.GetRoot()
-            if t.GetDiagnostics() |> Seq.isEmpty then x
+            if t.GetDiagnostics() |> Seq.isEmpty then Some x
             else
                 let x = 
                     sprintf """
@@ -492,22 +499,25 @@ let run (input:string) =
                     """ input
                     |> SyntaxFactory.ParseSyntaxTree
 
-                if Seq.isEmpty <| x.GetDiagnostics() then x 
+                if Seq.isEmpty <| x.GetDiagnostics() then Some x 
                 else
                     printfn "Invalid or Incomplete C#"
                     x.GetDiagnostics() |> Seq.iter (printfn "%A")
-                    exit 1
+                    None
         )
 
     let visitor = new FSharperTreeBuilder()
 
-    let nodes = tree.GetRoot().ChildNodes()
-    
+    let nodes = tree |> Option.map (fun x -> x.GetRoot().ChildNodes())
+
     nodes
-    |> Seq.fold (visitor.ParseSyntax) None
+    |> Option.bind(fun x ->  x |> Seq.fold (visitor.ParseSyntax) None)
     |> Option.map toFsharpSynaxTree 
     |> Option.map(removeFhsarpIn DefaultNames.file)
-    |> Option.map (toFsharpString config) 
+    |> Option.map (toFsharpString validateCode config) 
     |> function 
     | Some x -> x.Trim()
     | None -> "Invalid C# syntax tree"
+
+let run (input:string) = 
+    runWithConfig true input

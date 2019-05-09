@@ -63,6 +63,8 @@ and
 
 and MatchClause = 
     | Clause of Item1:SynPat * Item2:Expr option * Item3:Expr
+    
+    
 
 and
     [<NoEquality; NoComparison;RequireQualifiedAccess>]
@@ -155,7 +157,7 @@ and
     | LetOrUse of isRecursive:bool * isUse:bool * bindings:FSharpBinding list * body:Expr
 
     /// F# syntax: try expr with pat -> expr
-    | TryWith of tryExpr:Expr * withCases:SynMatchClause list * trySeqPoint:SequencePointInfoForTry * withSeqPoint:SequencePointInfoForWith
+    | TryWith of tryExpr:Expr * withCases:MatchClause list * trySeqPoint:SequencePointInfoForTry * withSeqPoint:SequencePointInfoForWith
 
     /// F# syntax: try expr finally expr
     | TryFinally of tryExpr:Expr * finallyExpr:Expr * trySeqPoint:SequencePointInfoForTry * finallySeqPoint:SequencePointInfoForFinally

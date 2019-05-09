@@ -94,7 +94,7 @@ module TreeOps =
 
         | Expr.LetOrUseBang (a,b,c,d,e,f) -> SynExpr.LetOrUseBang (a,b,c,d, toSynExpr e, toSynExpr f, range0)
 
-        //| TryWith of tryExpr:Expr * withCases:SynMatchClause list * trySeqPoint:SequencePointInfoForTry * withSeqPoint:SequencePointInfoForWith
+        | Expr.TryWith (a,b,c,d) -> SynExpr.TryWith (toSynExpr a,range0, b |> List.map toSynMatchExpr, range0, range0, c,d)
 
         //| TryFinally of tryExpr:Expr * finallyExpr:Expr * trySeqPoint:SequencePointInfoForTry * finallySeqPoint:SequencePointInfoForFinally
 
@@ -169,6 +169,8 @@ module TreeOps =
             | SynExpr.Paren (e,a,b,c) -> replaceSynExpr e |> (fun e -> SynExpr.Paren (e,a,b,c))
             | SynExpr.While (a,b,c,d) -> SynExpr.While (a, replaceSynExpr b, replaceSynExpr c,d)
             | SynExpr.YieldOrReturn (a, b, c) -> SynExpr.YieldOrReturn (a, replaceSynExpr b, c)
+            | SynExpr.TryWith (a,b,c,d,e,f,g) -> SynExpr.TryWith ( replaceSynExpr a,b,c,d,e,f,g)
+            | SynExpr.CompExpr (a,b,c,d) -> SynExpr.CompExpr (a,b, replaceSynExpr c,d)
             | e -> e
 
     let rewriteReturnInIf tree = 
@@ -602,48 +604,45 @@ module TreeOps =
             
         replaceExpr walker tree
 
-    let rec addNewLineToLet file tree = 
+    let addNewLineToLet file tree = 
         let moveDown = Range.moveDownLine file
         let moveAndAdd r1 = r1 |> Range.moveDownLine file |> Range.addLine file
 
         let rec loop tree = 
             match tree with 
-            | SynExpr.Paren (x, r1, p, r) -> SynExpr.Paren (x, moveDown r1, p, moveDown r)
-            | SynExpr.Const (x, r1) -> SynExpr.Const (x, moveDown r1)
-            | SynExpr.Typed (expr, typeName, r1) -> SynExpr.Typed (expr, typeName, moveDown r1)
-            | SynExpr.Tuple (xs, rs, r)  -> SynExpr.Tuple (xs, rs, moveDown r)
-            | SynExpr.App (a,b, c, d, r) -> SynExpr.App (a,b, loop c, loop d, moveDown r)
-            | SynExpr.LetOrUse (a,b,c, d, r1) -> SynExpr.LetOrUse (a,b,c, d, moveDown r1)
-            | SynExpr.Ident (r) -> SynExpr.Ident (Ident(r.idText, moveDown r.idRange))
-            | SynExpr.LongIdent (a,b, c, r) -> SynExpr.LongIdent (a,b, c, moveDown r)
-            | SynExpr.Set (left, right, r) -> SynExpr.Set (left, right, moveDown r)
-            | SynExpr.Null r -> SynExpr.Null <| moveDown r
-            | SynExpr.LongIdentSet (a,b,c) -> SynExpr.LongIdentSet (a,b, moveDown c)
+            | SynExpr.Paren (x, r1, p, r) -> SynExpr.Paren (x, moveDown r1, p, moveDown r) |> Some
+            | SynExpr.Const (x, r1) -> SynExpr.Const (x, moveDown r1) |> Some
+            | SynExpr.Typed (expr, typeName, r1) -> SynExpr.Typed (expr, typeName, moveDown r1) |> Some
+            | SynExpr.Tuple (xs, rs, r)  -> SynExpr.Tuple (xs, rs, moveDown r) |> Some
+            | SynExpr.App (a,b, c, d, r) -> SynExpr.App (a, b, c, d, moveDown r) |> Some
+            | SynExpr.LetOrUse (a,b,c, d, r1) -> SynExpr.LetOrUse (a,b,c, replaceSynExpr loop d, moveAndAdd r1) |> Some
+            | SynExpr.Ident (r) -> SynExpr.Ident (Ident(r.idText, moveDown r.idRange)) |> Some
+            | SynExpr.LongIdent (a,b, c, r) -> SynExpr.LongIdent (a,b, c, moveDown  r) |> Some
+            | SynExpr.Set (left, right, r) -> SynExpr.Set (left, right, moveDown r) |> Some
+            | SynExpr.Null r -> SynExpr.Null <| moveDown r |> Some
+            | SynExpr.LongIdentSet (a,b,c) -> SynExpr.LongIdentSet (a,b, moveDown c) |> Some
             | SynExpr.Sequential (a,b,c,d, r1) -> 
-                SynExpr.Sequential (a,b, loop  c, loop d,  moveAndAdd r1 )
+                SynExpr.Sequential (a,b, replaceSynExpr loop  c, replaceSynExpr loop d,  moveAndAdd r1 ) |> Some
             | SynExpr.IfThenElse (a, b, c,d, e, r1, r2) -> 
 
-                SynExpr.IfThenElse (loop a, loop b, c |> Option.map (loop ), d,e, moveAndAdd r1, moveAndAdd r2)
-            | SynExpr.ForEach (a,b,c,d,e,f,g) ->  SynExpr.ForEach (a,b,c,d,e,f,moveAndAdd g)
-            | SynExpr.TypeApp (a,b,c,d,e,f,g) -> SynExpr.TypeApp (loop a, moveDown b,c,d,e, moveDown f, moveDown g)
-            | SynExpr.DotGet (a,b,c, d) -> SynExpr.DotGet (a, moveDown b, c, moveDown d) 
-            | SynExpr.FromParseError (a,b) -> SynExpr.FromParseError (loop a, moveAndAdd b)
-            | SynExpr.Match (a,b,c,d,e) -> SynExpr.Match (a,b,c,d,e)
-            | SynExpr.For (a,b,c,d,e,f,g) -> SynExpr.For (a,b,c,d,e,f,g)
-            | SynExpr.DotIndexedGet (a,b,c,d) -> SynExpr.DotIndexedGet (a,b,c,d)
-            | SynExpr.DotIndexedSet (a,b,c,d,f,g) -> SynExpr.DotIndexedSet (a,b,c,d,f,g)
-            | SynExpr.While (a,b,c,d) -> SynExpr.While (a,b,c,d)
-
-        let walker tree = 
-            match tree with 
-            | SynExpr.ForEach (a,b,c,d,e,f,g) -> 
-                SynExpr.ForEach (a,b,c,d, loop e |> addNewLineToLet file, loop f |> addNewLineToLet file, g) |> Some
-            | SynExpr.LetOrUse (a,b,c,d,e) -> 
-                let d = loop d |> addNewLineToLet file 
-                SynExpr.LetOrUse (a,b,c, d, e) |> Some
+                SynExpr.IfThenElse (replaceSynExpr loop a, replaceSynExpr loop b, c |> Option.map (replaceSynExpr loop ), d,e, moveAndAdd r1, moveAndAdd r2) |> Some
+            | SynExpr.ForEach (a,b,c,d,e,f,g) ->  SynExpr.ForEach (a,b,c,d, replaceSynExpr loop e, replaceSynExpr loop f, g) |> Some
+            | SynExpr.TypeApp (a,b,c,d,e,f,g) -> SynExpr.TypeApp (replaceSynExpr loop a, moveDown b,c,d,e, moveDown f, moveDown g) |> Some
+            | SynExpr.DotGet (a,b,c, d) -> SynExpr.DotGet (a, moveDown b, c, moveDown d)  |> Some
+            | SynExpr.FromParseError (a,b) -> SynExpr.FromParseError (replaceSynExpr loop a, moveAndAdd b) |> Some
+            | SynExpr.Match (a,b,c,d,e) -> SynExpr.Match (a,b,c,d,e) |> Some
+            | SynExpr.For (a,b,c,d,e,f,g) -> SynExpr.For (a,b, replaceSynExpr loop c,d, replaceSynExpr loop e, replaceSynExpr loop f,g) |> Some
+            | SynExpr.DotIndexedGet (a,b,c,d) -> SynExpr.DotIndexedGet (a,b,c,d) |> Some
+            | SynExpr.DotIndexedSet (a,b,c,d,f,g) -> SynExpr.DotIndexedSet (a,b,c,d,f,g) |> Some
+            | SynExpr.While (a,b,c,d) -> SynExpr.While (a, replaceSynExpr loop b,c,d) |> Some
+            | SynExpr.TryWith (a,b,c,d,e,f,g) -> SynExpr.TryWith (replaceSynExpr loop a,moveDown b,c, moveDown d, moveDown e,f,g) |> Some
+            | SynExpr.Lambda (a,b,c,d,e) -> SynExpr.Lambda (a,b,c, replaceSynExpr loop d, moveAndAdd e) |> Some
             | _ -> None
 
-        replaceSynExpr walker tree
+        replaceSynExpr (fun tree -> 
+            match tree with 
+            | SynExpr.LetOrUse (a,b,c, d, r1) -> SynExpr.LetOrUse (a,b,c, replaceSynExpr loop d, moveAndAdd r1) |> Some
+            | _ -> None) tree
 
     // For some reason fantomas does not format let bindings correclty and wants to use the let .... in statements. 
     // This is done becuase there are not line endings. 

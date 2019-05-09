@@ -4,6 +4,7 @@ open NUnit.Framework
 open FSharper.Core
 open FsUnit
 open System
+open System.IO
 
 [<TestFixture>]
 type TestClass () =
@@ -120,7 +121,7 @@ type TestClass () =
              """long[] c = new long[100];"""
 
         let fsharp = 
-            """let mutable c = Array.zeroCreate<int64> 100"""
+            """let mutable c = Array.zeroCreate<int64> (100)"""
                    
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
@@ -1183,5 +1184,104 @@ type TestClass () =
              """member this.CreateContextMenu(entrySet: obj): int = (entrySet :?> Func<int, int>).Invoke(42)"""
                    
         csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert try catch`` () = 
+        let csharp = 
+             """public class Sample
+                {
+                    public static void Main() {
+                        String myString = "abc";
+                        bool test1 = myString.Substring(2, 1).Equals("c"); // This is true.
+                        Console.WriteLine(test1);
+                        bool test2 = String.IsNullOrEmpty(myString.Substring(3, 0)); // This is true.
+                        Console.WriteLine(test2);
+                        try {
+                           string str3 = myString.Substring(3, 1); // This throws ArgumentOutOfRangeException.
+                           Console.WriteLine(str3);
+                        }
+                        catch (ArgumentOutOfRangeException e) {
+                           Console.WriteLine(e.Message);
+                        }         
+                    }
+                }"""
+    
+        let fsharp = 
+             """type Sample() =
+                    static member Main() =
+                        let mutable myString = "abc"
+                        let mutable test1 = myString.Substring(2, 1).Equals("c")
+                        Console.WriteLine(test1)
+                        let mutable test2 = String.IsNullOrEmpty(myString.Substring(3, 0))
+                        Console.WriteLine(test2)
+                        try
+                            let mutable str3 = myString.Substring(3, 1)
+                            Console.WriteLine(str3)
+                        with :? ArgumentOutOfRangeException as e -> Console.WriteLine(e.Message)"""
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert try catch with multiple exception matchs`` () = 
+        let csharp = 
+             """public void Main() {
+                    try {
+                       string str3 = myString.Substring(3, 1); // This throws ArgumentOutOfRangeException.
+                       Console.WriteLine(str3);
+                    }
+                    catch (ArgumentOutOfRangeException e) {
+                       Console.WriteLine(e.Message);
+                    }  
+                    catch (Exception e) {
+                       Console.WriteLine(e.Message);
+                    }         
+                }"""
+    
+        let fsharp = 
+             """member this.Main() =
+                    try
+                        let mutable str3 = myString.Substring(3, 1)
+                        Console.WriteLine(str3)
+                    with
+                    | :? ArgumentOutOfRangeException as e -> Console.WriteLine(e.Message)
+                    | :? Exception as e -> Console.WriteLine(e.Message)"""
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert using block`` () = 
+        let csharp = 
+             """public static byte[] ReadFully(Stream input)
+                {
+                    byte[] buffer = new byte[16*1024];
+                    using (MemoryStream ms = new MemoryStream())
+                    {
+                        int read;
+                        while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+                        {
+                            ms.Write(buffer, 0, read);
+                        }
+                        return ms.ToArray();
+                    }
+                }"""
+    
+        let fsharp = 
+             """static member ReadFully(input: Stream): byte [] =
+                    let mutable buffer = Array.zeroCreate<byte> (16 * 1024)
+                    use ms = new MemoryStream()
+                    let mutable read = Unchecked.defaultof<int>
+                    read <- input.Read(buffer, 0, buffer.Length)
+                    while read > 0 do
+                        ms.Write(buffer, 0, read)
+                        read <- input.Read(buffer, 0, buffer.Length)
+                    ms.ToArray()"""
+
+        csharp |> Converter.runWithConfig false 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
