@@ -7,6 +7,7 @@ open Fantomas
 open FSharper.Core.TreeOps
 open System.Text
 open System.IO
+open Microsoft.CodeAnalysis.CSharp.Syntax
 
 module FormatOuput = 
 
@@ -432,12 +433,9 @@ let removeDefaultScaffolding (fsharpOutput:string) =
     fsharpOutput
     |> (fun x -> x.Replace("namespace ``Program35949ae4-3f6e-11e9-b4dc-230deb73e77f``\n", ""))
     |> (fun x -> x.Replace("type ``Klass067803f4-3f6e-11e9-b4df-6f8305ceb4a6``() =\n", ""))
-
-    
-    
     |> (fun x -> x.Replace("module ``Program35949ae4-3f6e-11e9-b4dc-230deb73e77f``\n\n", ""))
     |> (fun x -> x.Replace("\"Program35949ae4-3f6e-11e9-b4dc-230deb73e77f\"\n", ""))
-    |> (fun x -> x.Replace("member this.Method156143763f6e11e984e11f16c4cfd728() =\n", ""))
+    |> (fun x -> x.Replace("    member this.Method156143763f6e11e984e11f16c4cfd728() =\n", ""))
     |> (fun x -> x.Replace("""\010""", "\\n"))
     |> (fun x -> x.Replace("""\009""", "\\t"))
     |> (fun x -> x.Replace("""\013""", "\\r"))
@@ -463,13 +461,15 @@ let toFsharpString validateCode config parseInput =
         tree
         |> removeDefaultScaffolding
         |> (fun x -> 
-            let newLines = x.ToCharArray() |> Array.filter (fun x -> x ='\n') |> Array.length
-            if newLines >= 2 && (x.Contains "type " || x.Contains "module") then x 
-            else 
-                let reduceIndent (x:string) = 
-                    if x.StartsWith "    " then x.Substring 4 else x                        
 
-                x.Split '\n' |> Array.map reduceIndent |> String.concat "\n" )
+            let rec reduceIndent (x:string) = 
+                if x.StartsWith "    " |> not then x 
+                else 
+                    let trim (x:string) =  if x.StartsWith "    " then x.Substring 4 else x
+                    x.Split '\n' |> Array.map trim |> String.concat "\n" |> reduceIndent
+            reduceIndent x
+                
+                )
     else  "Bad F# syntax tree" 
 
 let runWithConfig validateCode (input:string) = 
@@ -489,7 +489,17 @@ let runWithConfig validateCode (input:string) =
         SyntaxFactory.ParseSyntaxTree (text = input, encoding = Encoding.UTF8)
         |> (fun x -> 
             let t = x.GetRoot()
-            if t.GetDiagnostics() |> Seq.isEmpty then Some x
+
+            let hasValidNode = 
+                t.ChildNodes() |> Seq.exists (function 
+                    | :? UsingDirectiveSyntax
+                    | :? NamespaceDeclarationSyntax
+                    | :? MethodDeclarationSyntax 
+                    | :? InterfaceDeclarationSyntax
+                    | :? ClassDeclarationSyntax -> true
+                    | _ -> false )
+
+            if t.GetDiagnostics() |> Seq.isEmpty && hasValidNode then Some x
             else
                 let x = 
                     sprintf """

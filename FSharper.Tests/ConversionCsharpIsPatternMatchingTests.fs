@@ -50,8 +50,8 @@ type ConverstionCsharpIsPatternMatching () =
                 
         let fsharp = 
              """match item with
-                    | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items.Count > 0 -> ()
-                    | _ -> _menuItem.Sensitive <- false"""
+                | :? CodeFixMenu as itemAsMenu when itemAsMenu.Items.Count > 0 -> ()
+                | _ -> _menuItem.Sensitive <- false"""
 
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
@@ -219,8 +219,8 @@ type ConverstionCsharpIsPatternMatching () =
 
         let fsharp = 
              """match item with
-                    | null -> false
-                    | _ -> true"""
+                | null -> false
+                | _ -> true"""
 
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
@@ -236,8 +236,8 @@ type ConverstionCsharpIsPatternMatching () =
 
         let fsharp = 
              """match item with
-                    | "o" -> "a"
-                    | _ -> "b" """
+                | "o" -> "a"
+                | _ -> "b" """
 
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
@@ -253,8 +253,8 @@ type ConverstionCsharpIsPatternMatching () =
 
         let fsharp = 
              """match item with
-                    | x -> "a"
-                    | _ -> "b" """ // FSharp will warn this code is impossible to reach.
+                | x -> "a"
+                | _ -> "b" """ // FSharp will warn this code is impossible to reach.
 
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)

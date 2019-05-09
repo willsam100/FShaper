@@ -121,7 +121,8 @@ type TestClass () =
              """long[] c = new long[100];"""
 
         let fsharp = 
-            """let mutable c = Array.zeroCreate<int64> (100)"""
+            """let mutable c = Array.zeroCreate<int64> (100)
+                ()"""
                    
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
@@ -163,7 +164,7 @@ type TestClass () =
 
         let fsharp = 
              """i <- n
-                    c.[i] <- c.[i] - 1"""
+                c.[i] <- c.[i] - 1"""
                    
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
@@ -1281,6 +1282,21 @@ type TestClass () =
                         ms.Write(buffer, 0, read)
                         read <- input.Read(buffer, 0, buffer.Length)
                     ms.ToArray()"""
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``single statements`` () = 
+        let csharp = 
+             """var credentials = new StoredProfileAWSCredentials(profileName);
+                var s3Client = new AmazonS3Client(credentials, RegionEndpoint.USWest2);"""
+    
+        let fsharp = 
+             """let mutable credentials = new StoredProfileAWSCredentials(profileName)
+                let mutable s3Client = new AmazonS3Client(credentials, RegionEndpoint.USWest2)
+                ()"""
 
         csharp |> Converter.runWithConfig false 
         |> (fun x -> printfn "%s" x; x)

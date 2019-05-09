@@ -28,7 +28,7 @@ type LoopngTests () =
 
         let fsharp = 
              """for n = 0 to 10 do
-                        Console.WriteLine(sprintf "%O" (n))"""
+                    Console.WriteLine(sprintf "%O" (n))"""
                    
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
@@ -44,7 +44,7 @@ type LoopngTests () =
 
         let fsharp = 
              """for n = 10 downto 1 do
-                        Console.WriteLine(sprintf "%O" (n))"""
+                    Console.WriteLine(sprintf "%O" (n))"""
                    
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)

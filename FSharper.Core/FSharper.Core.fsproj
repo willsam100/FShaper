@@ -1,11 +1,11 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
   <Import Project="fsc.props" />
   <ItemGroup>
     <Compile Include="DomainTypes.fs" />
+    <Compile Include="TreeOperations.fs" />
     <Compile Include="CsharpParser.fs" />
     <Compile Include="Translation.fs" />
     <Compile Include="Converter.fs" />
