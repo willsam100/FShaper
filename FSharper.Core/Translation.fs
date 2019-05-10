@@ -547,11 +547,12 @@ module TreeOps =
             | Expr.LongIdent (a, LongIdentWithDots(b, r)) -> 
                 let firstIdent = (List.head b).idText
                 methodNames |> Seq.tryFind (fun (className, name) -> firstIdent.Contains name )
-                |> Option.map (fun (className, _) -> 
+                |> Option.map (fun (className: string option, _) -> 
                     let replacement = 
                         match className with 
                         | None -> sprintf "this.%s"
-                        | Some staticMethodClassName -> sprintf "%s.%s" staticMethodClassName
+                        | Some staticMethodClassName when staticMethodClassName <> DefaultNames.className -> sprintf "%s.%s" staticMethodClassName
+                        | _ -> sprintf "%s"
 
                     LongIdentWithDots(b, r) |> joinLongIdentWithDots  |> replacement |> toLongIdent)
             | e -> None

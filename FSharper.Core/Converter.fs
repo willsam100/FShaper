@@ -70,24 +70,24 @@ module FormatOuput =
         match shouldWrapInComp e with 
         | Some x ->  wrapInComp x e
         | None -> e
-        
-    let toMethod className methodNames (x:Method) = 
+
+    let toMethod methodNames (x:Method) = 
         let methodName = 
             if x.IsStatic 
             then toLongIdentWithDots x.Name
             else LongIdentWithDots (toIdent ("this." + x.Name), [range0])
 
-        let argInfos = 
-            let args = 
-                x.Parameters |> List.map (fun x -> SynArgInfo ([],false, Ident(x.Name, range0) |> Some  ) )
-            [args]
+        let argInfos = []
+            //let args = 
+            //    x.Parameters |> List.map (fun x -> SynArgInfo ([],false, Ident(x.Name, range0) |> Some  ) )
+            //[args]
 
         let namedArgs = 
             let typeArgs = 
-                x.Parameters |> List.map (fun x -> 
-                    SynPat.Typed (
-                        SynPat.Named (SynPat.Wild range0, Ident(x.Name, range0), false, None, range0), 
-                                        x.Type, range0) )
+                x.Parameters 
+                //|> List.map (fun x -> 
+                    //SynPat.Typed (
+                        //SynPat.Named (SynPat.Wild range0, Ident(x.Name, range0), false, None, range0), x.Type, range0) )
             SynPat.Paren (SynPat.Tuple (typeArgs, range0), range0)
 
         let attributres = 
@@ -300,9 +300,10 @@ module FormatOuput =
         let x = 
             ComponentInfo (att, typeVals, [], toIdent cn.Name.Name, PreXmlDocEmpty, false, None, range0)
 
+        
         let properties = cn.Properties |> List.collect toProperty
         let methodNames = cn.Methods |> List.map (fun x -> (if x.IsStatic then Some cn.Name.Name else None), x.Name.Replace ("this.", ""))
-        let methods = cn.Methods |> List.map (toMethod (Some cn.Name.Name) methodNames)
+        let methods = cn.Methods |> List.map (toMethod methodNames)
         let fields = cn.Fields |> List.map toLet
 
         let interfaces = 
@@ -323,7 +324,7 @@ module FormatOuput =
                     Method.ReturnType = SynType.LongIdent (toLongIdentWithDots "unit")
                 }
 
-                SynMemberDefn.Interface (x,method |> toMethod None [] |> List.singleton |> Some, range0))
+                SynMemberDefn.Interface (x,method |> toMethod [] |> List.singleton |> Some, range0))
 
         let ctors = 
 
@@ -335,14 +336,7 @@ module FormatOuput =
             let ctor = 
                 mainCtor
                 |> Option.map (fun x -> 
-
-                    let classArgs = 
-                        x.Parameters |> List.map (fun x -> 
-                            SynSimplePat.Typed
-                                (SynSimplePat.Id 
-                                    (toSingleIdent x.Name, None, 
-                                    false, false, false, range0), x.Type, range0) )
-                    SynMemberDefn.ImplicitCtor (None,[], classArgs, None, range0) )
+                    SynMemberDefn.ImplicitCtor (None,[], x.Parameters , None, range0) )
                     
                 |> function 
                 | Some c -> c

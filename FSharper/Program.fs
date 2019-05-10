@@ -5,7 +5,9 @@ open FSharper.Core
 open Fantomas.FormatConfig
 open System.Text.RegularExpressions
 
-    
+type Main( [<ParamArray>] foobar: string [] ) = 
+    member this.Foo() = ()
+
 [<EntryPoint>]
 let main argv =
 
@@ -19,12 +21,8 @@ let main argv =
     // the syntax can then be used to idently how to construct it from the CSharp syntax
     else
         let input = 
-                 """type Main() = 
-                        member this.Foo() = 
-                            try
-                               Console.WriteLine(str);
-                            with 
-                            | :? ArgumentOutOfRangeException as ex -> Console.WriteLine(ex.Message)""" // Add expected F# syntax here
+                 """type Main([<ParamArray>] foobar: string [] ) = 
+                        member this.MembersJoined( [<ParamArray>] (members: string [])) = ()""" // Add expected F# syntax here
 
         let placeholderFilename = "/home/user/Test.fsx"
         let tree = TreeOps.getUntypedTree(placeholderFilename, input)

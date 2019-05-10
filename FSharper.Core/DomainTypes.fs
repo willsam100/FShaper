@@ -321,13 +321,13 @@ type Parameter = {
 
 type Ctor = {
     Body:Line
-    Parameters: Parameter list
+    Parameters: SynSimplePat list
     SubclassArgs: string list
 }
 
 type Method = {
     Name:string
-    Parameters:Parameter list
+    Parameters:SynPat list
     Body: Expr
     ReturnType:SynType
     IsVirtual:bool

@@ -1221,7 +1221,25 @@ type FSharperTreeBuilder() =
             Ctor.Parameters = 
                 node.ParameterList.Parameters 
                 |> Seq.map (fun x -> 
-                    {Parameter.Name = x.Identifier.WithoutTrivia().Text; Type = ParserUtil.parseType x.Type })
+
+                    let name = x.Identifier.WithoutTrivia().Text
+                    let typee = ParserUtil.parseType x.Type
+                    let typeArg = 
+                        SynSimplePat.Typed
+                            (SynSimplePat.Id 
+                                (toSingleIdent name, None, 
+                                false, false, false, range0), typee, range0) 
+
+                    if x.Modifiers |> Seq.exists (fun x -> x.ToString() = "params") then 
+                        SynSimplePat.Attrib (typeArg, 
+                            [   {
+                                    SynAttribute.TypeName = toLongIdentWithDots "ParamArray"
+                                    SynAttribute.ArgExpr = SynExpr.Const (SynConst.Unit, range0)
+                                    SynAttribute.Target = None;
+                                    SynAttribute.AppliesToGetterAndSetter = false;
+                                    SynAttribute.Range = range0}], 
+                                    range0)
+                    else typeArg )
                 |> Seq.toList
 
             SubclassArgs = 
@@ -1253,7 +1271,23 @@ type FSharperTreeBuilder() =
             Method.Parameters = 
                 node.ParameterList.Parameters 
                 |> Seq.map (fun x -> 
-                    {Parameter.Name = x.Identifier.WithoutTrivia().Text; Type = ParserUtil.parseType x.Type })
+
+                    let name = x.Identifier.WithoutTrivia().Text
+                    let typee = ParserUtil.parseType x.Type
+                    let typeArg = SynPat.Typed (SynPat.Named (SynPat.Wild range0, Ident(name, range0), false, None, range0), typee, range0)
+
+                    if x.Modifiers |> Seq.exists (fun x -> x.ToString() = "params") then 
+                        let typeArg = 
+                            SynPat.Attrib (typeArg, 
+                                [{
+                                    SynAttribute.TypeName = toLongIdentWithDots "ParamArray"
+                                    SynAttribute.ArgExpr = SynExpr.Const (SynConst.Unit, range0)
+                                    SynAttribute.Target = None;
+                                    SynAttribute.AppliesToGetterAndSetter = false;
+                                    SynAttribute.Range = range0}], 
+                                    range0)
+                        SynPat.Paren(typeArg, range0)
+                    else typeArg )
                 |> Seq.toList
             Method.Body =
                 node.Body |> Option.ofObj |> Option.map (fun x -> 
@@ -1411,5 +1445,6 @@ type FSharperTreeBuilder() =
             | UsingStatement using1, UsingStatement using2 -> FileWithUsing ([using1; using2], []) |> File |> Some
             | UsingStatement using, Namespace ``namespace`` -> FileWithUsingNamespace ([using], [``namespace``]) |> File |> Some
             | UsingStatement using, Class name -> FileWithUsing ([using; ], [name]) |> File |> Some
+            | Class name1, Class name2 -> FileWithUsingNamespaceAndDefault ([], [], [name1; name2]) |> File |> Some
 
             //| _, _ -> sprintf "C# not supported: %A, %A" tree result |> failwith

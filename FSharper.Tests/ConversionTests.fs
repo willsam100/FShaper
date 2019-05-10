@@ -1301,3 +1301,119 @@ type TestClass () =
         csharp |> Converter.runWithConfig false 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
+
+
+    [<Test>]
+    member this.``parse params keyword`` () = 
+        let csharp = 
+             """public class MembersJoined
+                {
+
+                public MembersJoined()
+                {
+                }
+
+                public MembersJoined(int day, string location, params string[] members)
+                {
+                    Day = day;
+                    Location = location;
+                    Members = members;
+                }
+
+                public Guid QuestId { get; set; }
+                public int Day { get; set; }
+                public string Location { get; set; }
+                public string[] Members { get; set; }
+                public override string ToString()
+                {
+                    return $"Members {Members.Join(", ")} joined at {Location} on Day {Day}";
+                }
+            }"""
+    
+        let fsharp = 
+             """type MembersJoined(day: int, location: string, [<ParamArray>] members: string []) =
+                    member val QuestId: Guid = null with get, set
+                    member val Day: int = null with get, set
+                    member val Location: string = null with get, set
+                    member val Members: ``string[]`` = null with get, set
+                    member this.ToString(): string = sprintf "Members %O joined at %O on Day %O" (Members.Join(", ")) (Location) (Day)"""
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``parse mutliple classes`` () = 
+        let csharp = 
+             """public class QuestStarted
+                {
+                    public string Name { get; set; }
+                    public Guid Id { get; set; }
+
+                    public override string ToString()
+                    {
+                        return $"Quest {Name} started";
+                    }
+                }
+
+                public class QuestEnded
+                {
+                    public string Name { get; set; }
+                    public Guid Id { get; set; }
+
+                    public override string ToString()
+                    {
+                        return $"Quest {Name} ended";
+                    }
+                }"""
+    
+        let fsharp = 
+             """type QuestStarted() =
+                    member val Name: string = null with get, set
+                    member val Id: Guid = null with get, set
+                    member this.ToString(): string = sprintf "Quest %O started" (Name)
+
+                type QuestEnded() =
+                    member val Name: string = null with get, set
+                    member val Id: Guid = null with get, set
+                    member this.ToString(): string = sprintf "Quest %O ended" (Name)"""
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``incomplete recursive static method`` () = 
+        let csharp = 
+             """static int fib(int n)
+                {
+                    if (n == 0 || n == 1)
+                        return n;
+
+                    return fib(n - 1) + fib(n - 2);
+                }"""
+    
+        let fsharp = 
+             """static member fib (n: int): int =
+                    if n = 0 || n = 1 then n
+                    else fib (n - 1) + fib (n - 2)"""
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+        
+    [<Test>]
+    member this.``method with params keyword`` () = 
+        let csharp = 
+             """public static void UseParams(params int[] myList)
+                {
+                    Console.WriteLine();
+                }"""
+    
+        let fsharp = 
+             """static member UseParams(([<ParamArray>] myList: int [])) = Console.WriteLine()"""
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)        
