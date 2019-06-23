@@ -9,7 +9,6 @@
     <Compile Include="CsharpParser.fs" />
     <Compile Include="Translation.fs" />
     <Compile Include="Converter.fs" />
-    <None Include="fsc.props" />
     <PackageReference Include="FSharp.Compiler.Service" Version="25.0.1" />
     <PackageReference Include="FSharp.Compiler.Tools" Version="10.2.1" />
     <PackageReference Include="FSharp.Core" Version="4.6.2" />

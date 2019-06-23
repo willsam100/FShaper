@@ -155,22 +155,24 @@ module TreeOps =
         | Some x -> x
         | None -> 
             match tree with 
-            | SynExpr.Sequential (s1,s2,s3,s4,r) -> SynExpr.Sequential (s1,s2, replaceSynExpr s3, replaceSynExpr s4, r)
+            | SynExpr.App (a,b,c,d,e) -> SynExpr.App (a,b, replaceSynExpr c, replaceSynExpr d,e)
+            | SynExpr.CompExpr (a,b,c,d) -> SynExpr.CompExpr (a,b, replaceSynExpr c,d)
             | SynExpr.Downcast (e,a, r) ->  SynExpr.Downcast (replaceSynExpr e,a,r)
             | SynExpr.DotSet (a,b,c,r) -> SynExpr.DotSet (replaceSynExpr a, b, replaceSynExpr c,r)
             | SynExpr.DotGet (e, a, b, c) -> SynExpr.DotGet (replaceSynExpr e, a,b,c)
+            | SynExpr.ForEach (a,b,c,d,e,f,g) -> SynExpr.ForEach (a,b,c,d, replaceSynExpr e, replaceSynExpr f,g)    
             | SynExpr.IfThenElse (a,b,c,d,e,f,g) -> SynExpr.IfThenElse (replaceSynExpr a,replaceSynExpr b,c |> Option.map replaceSynExpr,d,e,f,g)
+            | SynExpr.Lambda (a,b,c,d,e) -> SynExpr.Lambda (a,b,c, replaceSynExpr d,e)
             | SynExpr.LetOrUse (x,y,z,i,j) -> SynExpr.LetOrUse (x,y,z, replaceSynExpr i,j)
             | SynExpr.LetOrUseBang (x,y,z,i,j,k,l) -> SynExpr.LetOrUseBang (x,y,z, i, replaceSynExpr j,replaceSynExpr k, l)
-            | SynExpr.App (a,b,c,d,e) -> SynExpr.App (a,b, replaceSynExpr c, replaceSynExpr d,e)
-            | SynExpr.ForEach (a,b,c,d,e,f,g) -> SynExpr.ForEach (a,b,c,d, replaceSynExpr e, replaceSynExpr f,g)    
             | SynExpr.Match (a,b,c,d,f) -> SynExpr.Match (a, replaceSynExpr b,c,d,f)
-            | SynExpr.Lambda (a,b,c,d,e) -> SynExpr.Lambda (a,b,c, replaceSynExpr d,e)
             | SynExpr.Paren (e,a,b,c) -> replaceSynExpr e |> (fun e -> SynExpr.Paren (e,a,b,c))
+            | SynExpr.Sequential (s1,s2,s3,s4,r) -> SynExpr.Sequential (s1,s2, replaceSynExpr s3, replaceSynExpr s4, r)
+            | SynExpr.TryWith (a,b,c,d,e,f,g) -> SynExpr.TryWith ( replaceSynExpr a,b,c,d,e,f,g)
             | SynExpr.While (a,b,c,d) -> SynExpr.While (a, replaceSynExpr b, replaceSynExpr c,d)
             | SynExpr.YieldOrReturn (a, b, c) -> SynExpr.YieldOrReturn (a, replaceSynExpr b, c)
-            | SynExpr.TryWith (a,b,c,d,e,f,g) -> SynExpr.TryWith ( replaceSynExpr a,b,c,d,e,f,g)
-            | SynExpr.CompExpr (a,b,c,d) -> SynExpr.CompExpr (a,b, replaceSynExpr c,d)
+            | SynExpr.Typed (a,b,c) -> SynExpr.Typed (replaceSynExpr a,b,c)
+            | SynExpr.TypeApp (a,b,c,d,e,f,g) -> SynExpr.TypeApp (replaceSynExpr a,b,c,d,e,f,g)
             | e -> e
 
     let rewriteReturnInIf tree = 
@@ -473,11 +475,21 @@ module TreeOps =
                 let f = Expr.YieldOrReturn ((false, true), Expr.App (f,g,h,i))
                 Expr.LetOrUseBang (a,b,c,d,e |> awaitTask, f) |> Some
             | Expr.LetOrUseBang (a,b,c,d,e,f) -> 
-
                 Expr.LetOrUseBang (a,b,c,d, e |> awaitTask, f) |> Some
             | _ -> None
 
-        replaceExpr walker tree
+        let rec replaceLetRootWithReturn = function 
+            | Expr.LetOrUse (a,b,c, Expr.LetOrUse (e,f,g,h)) ->  
+                let d = replaceExpr replaceLetRootWithReturn (Expr.LetOrUse (e,f,g,h))
+                Expr.LetOrUse (a,b,c,d) |> Some
+            | Expr.LetOrUse (a,b,c, Expr.LetOrUseBang (d,e,f,g,h,i)) ->  
+                let d = replaceExpr replaceLetRootWithReturn (Expr.LetOrUseBang (d,e,f,g,h,i))
+                Expr.LetOrUse (a,b,c,d) |> Some
+            | Expr.LetOrUse (a,b,c, d) ->  
+                Expr.LetOrUse (a,b,c,Expr.YieldOrReturn ((false, true), d)) |> Some
+            | _ -> None
+
+        tree |> replaceExpr replaceLetRootWithReturn |> replaceExpr walker
 
     let shouldWrapInComp tree = 
         ParserUtil.containsExpr (function 
@@ -638,11 +650,14 @@ module TreeOps =
             | SynExpr.While (a,b,c,d) -> SynExpr.While (a, replaceSynExpr loop b,c,d) |> Some
             | SynExpr.TryWith (a,b,c,d,e,f,g) -> SynExpr.TryWith (replaceSynExpr loop a,moveDown b,c, moveDown d, moveDown e,f,g) |> Some
             | SynExpr.Lambda (a,b,c,d,e) -> SynExpr.Lambda (a,b,c, replaceSynExpr loop d, moveAndAdd e) |> Some
+            | SynExpr.LetOrUseBang (a,b,c,d,e,f,g) -> SynExpr.LetOrUseBang (a,b,c,d,replaceSynExpr loop e,replaceSynExpr loop f, moveAndAdd g) |> Some
+            | SynExpr.YieldOrReturn (a,b,c) -> SynExpr.YieldOrReturn (a, replaceSynExpr loop b, moveAndAdd c) |> Some
             | _ -> None
 
         replaceSynExpr (fun tree -> 
             match tree with 
             | SynExpr.LetOrUse (a,b,c, d, r1) -> SynExpr.LetOrUse (a,b,c, replaceSynExpr loop d, moveAndAdd r1) |> Some
+            | SynExpr.LetOrUseBang (a,b,c,d,e,f,g) -> SynExpr.LetOrUseBang (a,b,c,d,replaceSynExpr loop  e,replaceSynExpr loop f, moveAndAdd g) |> Some
             | _ -> None) tree
 
     // For some reason fantomas does not format let bindings correclty and wants to use the let .... in statements. 
@@ -652,53 +667,44 @@ module TreeOps =
     let removeFhsarpIn file tree =
 
         match tree with
-        | ParsedInput.ImplFile(implFile) ->
-            // Extract declarations and walk over them
-            let (ParsedImplFileInput(fn, script, name, a, b, modules, c)) = implFile
+        | ParsedInput.ImplFile(ParsedImplFileInput(fn, script, name, a, b, modules, c)) ->
+
+            let replaceOnModuleOrNamespace func (SynModuleOrNamespace (a,b,c,modules,e,f,g,h)) = 
+                SynModuleOrNamespace (a,b,c,modules |> List.map func, e,f,g,h)
+
+            let replaceTypeDefn funcB funcMember (SynTypeDefn.TypeDefn (a,b,members,d)) =
+                SynTypeDefn.TypeDefn (a, funcB b,funcMember members,d)
 
             let modules = 
-                modules |> List.map (fun (SynModuleOrNamespace (a,b,c,modules,e,f,g,h)) -> 
-                    let modules = 
-                        modules |> List.map (fun x -> 
-                            match x with 
-                            | SynModuleDecl.Types (a,b) -> 
-                                let a = 
-                                    a |> List.map (fun (SynTypeDefn.TypeDefn (a,b,members,d)) -> 
-
+                modules |> List.map (replaceOnModuleOrNamespace (fun x -> 
+                    match x with 
+                    | SynModuleDecl.Types (a,b) -> 
+                        let a = 
+                            a |> List.map (replaceTypeDefn (function 
+                                    | SynTypeDefnRepr.ObjectModel (a,b,c) -> 
                                         let b = 
-                                            match b with 
-                                            | SynTypeDefnRepr.ObjectModel (a,b,c) -> 
-                                                let b = 
-                                                    b |> List.map (fun x -> 
-                                                        match x with 
-                                                        | SynMemberDefn.Member ((Binding (a,b,c,d,e,f,g,h,i,expr,k,l)),m2) -> 
-                                                            let m2 = Range.addLine file m2
-                                                            let expr = expr |> addNewLineToLet file
-
-                                                            SynMemberDefn.Member ((Binding (a,b,c,d,e,f,g,h,i,expr,k,l)),m2)
-
-                                                        | x -> x
-                                                    )
-
-                                                SynTypeDefnRepr.ObjectModel (a,b,c)
-                                            | x -> x
-
-                                        let members = 
-                                            members |> List.map (fun x -> 
+                                            b |> List.map (fun x -> 
                                                 match x with 
                                                 | SynMemberDefn.Member ((Binding (a,b,c,d,e,f,g,h,i,expr,k,l)),m2) -> 
                                                     let m2 = Range.addLine file m2
                                                     let expr = expr |> addNewLineToLet file
-
                                                     SynMemberDefn.Member ((Binding (a,b,c,d,e,f,g,h,i,expr,k,l)),m2)
 
                                                 | x -> x
                                             )
-                                        SynTypeDefn.TypeDefn (a,b,members,d)
-                                    )
-                                SynModuleDecl.Types (a,b)
-                            | x -> x )
-                    SynModuleOrNamespace (a,b,c,modules,e,f,g,h)
-                )
+
+                                        SynTypeDefnRepr.ObjectModel (a,b,c)
+                                    | x -> x) 
+                                    (fun members -> 
+                                        members |> List.map (fun x -> 
+                                        match x with 
+                                        | SynMemberDefn.Member ((Binding (a,b,c,d,e,f,g,h,i,expr,k,l)),m2) -> 
+                                            let m2 = Range.addLine file m2
+                                            let expr = expr |> addNewLineToLet file
+
+                                            SynMemberDefn.Member ((Binding (a,b,c,d,e,f,g,h,i,expr,k,l)),m2)
+                                        | x -> x)) )
+                        SynModuleDecl.Types (a,b)
+                    | x -> x ) )
             ParsedImplFileInput(fn, script, name, a, b, modules, c) |> ParsedInput.ImplFile
         | _ -> failwith "F# Interface file (*.fsi) not supported."

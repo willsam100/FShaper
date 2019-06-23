@@ -21,8 +21,16 @@ let main argv =
     // the syntax can then be used to idently how to construct it from the CSharp syntax
     else
         let input = 
-                 """type Main([<ParamArray>] foobar: string [] ) = 
-                        member this.MembersJoined( [<ParamArray>] (members: string [])) = ()""" // Add expected F# syntax here
+                 """type Foo() =
+                     member this.Index(scraper: HzzoHtmlScraper): Task<ActionResult> =
+                        async {
+                                let mutable startTime = DateTime.Now
+                                let! meds = scraper.Run() |> Async.AwaitTask
+                                let mutable totalTime = startTime - DateTime.Now 
+                                return Ok(sprintf "Done! Handler duration: %O" (totalTime.Duration())
+                                                + Environment.NewLine + Environment.NewLine
+                                                + (TypeSyntax.Join(Environment.NewLine, meds.Select(fun x -> x.FileName))))
+                         } |> Async.StartAsTask """ // Add expected F# syntax here
 
         let placeholderFilename = "/home/user/Test.fsx"
         let tree = TreeOps.getUntypedTree(placeholderFilename, input)

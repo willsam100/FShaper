@@ -1,6 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>netcoreapp2.1</TargetFramework>
+    <TargetFramework>netcoreapp2.0</TargetFramework>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
@@ -8,12 +8,14 @@
     <PackageReference Include="NUnit3TestAdapter" Version="3.10.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.8.0" />
     <PackageReference Include="FsUnit" Version="3.4.0" />
+    <PackageReference Include="FSharp.Core" Version="4.6.2" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ConversionTests.fs" />
     <Compile Include="ConversionLoopingTests.fs" />
     <Compile Include="ConversionCsharpIsPatternMatchingTests.fs" />
     <Compile Include="AsyncAwaitTests.fs" />
+    <Compile Include="ExtensionMethodsTests.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
   <ItemGroup>

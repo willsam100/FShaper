@@ -7,6 +7,10 @@ open Microsoft.FSharp.Compiler.Ast
 open Microsoft.FSharp.Compiler.Range
 
 module ExprOps = 
+    let withParenIfReq expr = 
+        match expr with 
+        | Expr.App (_, false,Expr.App (_, true, _, _), _) as e -> Expr.Paren e
+        | e -> e
 
     let toApp left right = 
         Expr.App (ExprAtomicFlag.NonAtomic, false, left, right)

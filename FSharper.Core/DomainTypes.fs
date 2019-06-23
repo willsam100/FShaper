@@ -320,7 +320,7 @@ type Parameter = {
 }
 
 type Ctor = {
-    Body:Line
+    Body:Expr list
     Parameters: SynSimplePat list
     SubclassArgs: string list
 }
@@ -341,7 +341,7 @@ type Method = {
 
 type Prop = {
     Name:string
-    Type:string
+    Type:SynType
     Get: Expr option
     Set: Expr option
     Access: SynAccess option

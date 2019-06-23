@@ -84,3 +84,35 @@ type AsyncAwaitTests () =
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
 
+    [<Test>]
+    member this.``return keyword is added with complex final statement`` () = 
+        let csharp = 
+             """public async Task<ActionResult> Index([FromServices] HzzoHtmlScraper scraper)
+                {
+                    var startTime = DateTime.Now;
+                    var meds = await scraper.Run();
+                    var totalTime = startTime - DateTime.Now;
+
+                    return Ok(
+                        $"Done! Handler duration: {totalTime.Duration()}" +
+                        Environment.NewLine +
+                        Environment.NewLine +
+                        string.Join(Environment.NewLine, meds.Select(x => x.FileName))
+                    );
+                }"""
+    
+        let fsharp = 
+             """member this.Index(scraper: HzzoHtmlScraper): Task<ActionResult> =
+                    async {
+                        let mutable startTime = DateTime.Now
+                        let! meds = scraper.Run() |> Async.AwaitTask
+                        let mutable totalTime = startTime - DateTime.Now
+                        return Ok
+                                   (sprintf "Done! Handler duration: %O" (totalTime.Duration()) + Environment.NewLine
+                                    + Environment.NewLine + TypeSyntax.Join(Environment.NewLine, meds.Select(fun x -> x.FileName)))
+                    }
+                    |> Async.StartAsTask"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)

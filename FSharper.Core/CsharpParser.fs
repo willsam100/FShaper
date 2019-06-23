@@ -140,17 +140,22 @@ type CSharpStatementWalker() =
 
     static member ParseBinaryExpresson (node:BinaryExpressionSyntax):Expr = 
 
-        let createLogicalExpression join = 
 
+        let parseLeftandRight () = 
             let left = 
                 match node.Left with 
                 | :? BinaryExpressionSyntax as x -> CSharpStatementWalker.ParseBinaryExpresson x 
-                | _ -> CSharpStatementWalker.ParseExpressionWithVaribles node.Left
+                | _ -> CSharpStatementWalker.ParseExpressionWithVariables node.Left
 
             let right = 
                 match node.Right with 
                 | :? BinaryExpressionSyntax as x -> CSharpStatementWalker.ParseBinaryExpresson x 
                 | _ -> CSharpStatementWalker.ParseChsarpNode node.Right
+
+            left,right            
+
+        let createLogicalExpression join = 
+            let (left, right) = parseLeftandRight ()
 
             let right = 
                 match join, left with
@@ -165,8 +170,7 @@ type CSharpStatementWalker() =
                     | _ -> right
                 | _, _ -> right
 
-            Expr.App (ExprAtomicFlag.NonAtomic, false, 
-                Expr.App(ExprAtomicFlag.NonAtomic, true, Expr.Ident join, left), right) 
+            ExprOps.toInfixApp left (Expr.Ident join) right
 
         match node.Kind() with 
         | SyntaxKind.AddExpression -> PrettyNaming.CompileOpName "+" |> createLogicalExpression
@@ -193,6 +197,14 @@ type CSharpStatementWalker() =
                 | x -> sprintf "Expected type identifier, but got: %A" x |> failwith
 
             Expr.Downcast (left, right)
+        | SyntaxKind.CoalesceExpression -> 
+
+            let (left, right) = parseLeftandRight ()
+            let pipe = PrettyNaming.CompileOpName "|>" |> toLongIdent
+            let defaultValue = ExprOps.toApp (toLongIdent "Option.defaultValue") right
+            let toOptional = ExprOps.toInfixApp left pipe (toLongIdent "Option.ofObj")
+            ExprOps.toInfixApp toOptional pipe defaultValue
+
         | e -> 
             let ident = createErorrCode node
             Expr.LongIdent (false, ident)
@@ -415,7 +427,7 @@ type CSharpStatementWalker() =
         | :? ContinueStatementSyntax as x -> Expr.ReturnFromIf <| Expr.Const SynConst.Unit
         //| :? DoStatementSyntax as x -> "DoStatement" |> toLongIdent
         | :? EmptyStatementSyntax as x -> Expr.Const SynConst.Unit
-        | :? ExpressionStatementSyntax as x -> x.Expression |> CSharpStatementWalker.ParseExpressionWithVaribles
+        | :? ExpressionStatementSyntax as x -> x.Expression |> CSharpStatementWalker.ParseExpressionWithVariables
         //| :? FixedStatementSyntax as x -> "FixedStatement" |> toLongIdent
         | :? ForStatementSyntax as x -> 
 
@@ -524,7 +536,7 @@ type CSharpStatementWalker() =
                     let initializers = 
                         x.Initializers 
                         |> Seq.toList 
-                        |> List.map CSharpStatementWalker.ParseExpressionWithVaribles
+                        |> List.map CSharpStatementWalker.ParseExpressionWithVariables
 
                     let start = 
                         let var = joinLongIdentWithDots var
@@ -610,7 +622,7 @@ type CSharpStatementWalker() =
 
         | :? WhileStatementSyntax as x -> 
             let body = CSharpStatementWalker.ParseStatementSyntax x.Statement |> replaceAnyPostOrPreIncrement
-            let expr = CSharpStatementWalker.ParseExpressionWithVaribles x.Condition
+            let expr = CSharpStatementWalker.ParseExpressionWithVariables x.Condition
 
             match containsExpr (function | Expr.LongIdentSet _ -> true | _ -> false) expr with 
             | [Expr.LongIdentSet(x,y)] -> 
@@ -661,7 +673,7 @@ type CSharpStatementWalker() =
             let ident = createErorrCode node
             Expr.LongIdent (false, ident)
 
-    static member ParseChsarpNode (node:CSharpSyntaxNode, ?withSelfIdentifier):Expr = 
+    static member ParseChsarpNode (node:CSharpSyntaxNode):Expr = 
 
 
         match node with 
@@ -675,10 +687,10 @@ type CSharpStatementWalker() =
         | :? AnonymousObjectMemberDeclaratorSyntax as x -> "AnonymousObjectMemberDeclarator" |> toLongIdent
         | :? ArgumentSyntax as x -> x.Expression |> CSharpStatementWalker.ParseExpression
         | :? ArrayRankSpecifierSyntax as x -> "ArrayRankSpecifier" |> toLongIdent
-        | :? ArrowExpressionClauseSyntax as x -> "ArrowExpressionClause" |> toLongIdent
+        | :? ArrowExpressionClauseSyntax as x -> x.Expression |> CSharpStatementWalker.ParseExpression
         | :? AttributeArgumentListSyntax as x -> 
             x.Arguments |> Seq.toList 
-            |> List.map (fun x -> CSharpStatementWalker.ParseChsarpNode (x, ?withSelfIdentifier = withSelfIdentifier))
+            |> List.map (fun x -> CSharpStatementWalker.ParseChsarpNode x)
             |> Expr.Tuple 
             |> Expr.Paren
 
@@ -687,7 +699,7 @@ type CSharpStatementWalker() =
         | :? AttributeSyntax as x -> "Attribute" |> toLongIdent
         | :? AttributeTargetSpecifierSyntax as x -> "AttributeTargetSpecifier" |> toLongIdent
         | :? BaseArgumentListSyntax as x -> 
-            x.Arguments |> Seq.map (fun x -> CSharpStatementWalker.ParseChsarpNode (x.Expression, ?withSelfIdentifier = withSelfIdentifier)) 
+            x.Arguments |> Seq.map (fun x -> CSharpStatementWalker.ParseChsarpNode x.Expression) 
             |> Seq.toList |> Expr.Tuple |> Expr.Paren
 
             //"BaseArgumentList" |> toLongIdent
@@ -789,11 +801,9 @@ type CSharpStatementWalker() =
             Expr.LongIdent (false, ident)
 
     static member ParseExpression (node:ExpressionSyntax) = 
-        node |> 
-        CSharpStatementWalker.ParseExpressionWithVaribles 
-        |> replaceAnyPostOrPreIncrement
+        node |> CSharpStatementWalker.ParseExpressionWithVariables |> replaceAnyPostOrPreIncrement
 
-    static member ParseExpressionWithVaribles (node:ExpressionSyntax) = 
+    static member ParseExpressionWithVariables (node:ExpressionSyntax) = 
 
         if node = null then  printfn "Node was null"; Expr.Const SynConst.Unit else
 
@@ -990,12 +1000,13 @@ type CSharpStatementWalker() =
         
             let args =  
                 x.ArgumentList.Arguments 
-                |> Seq.map (fun x -> CSharpStatementWalker.ParseChsarpNode x )
+                |> Seq.map CSharpStatementWalker.ParseChsarpNode 
                 |> Seq.toList
                 |> Expr.Tuple 
+                |> Expr.Paren
 
             let name = x.Expression |> CSharpStatementWalker.ParseExpression
-            Expr.App (ExprAtomicFlag.NonAtomic, false, name, Expr.Paren args)
+            Expr.App (ExprAtomicFlag.NonAtomic, false, name, args)
 
         //| :? IsPatternExpressionSyntax as x -> ()
         | :? LiteralExpressionSyntax as x -> 
@@ -1005,13 +1016,13 @@ type CSharpStatementWalker() =
 
             //x.Name
             match x.OperatorToken.Text with 
-            | "." -> Expr.DotGet(x.Expression |> CSharpStatementWalker.ParseExpression, x.Name.WithoutTrivia().ToFullString() |> toLongIdentWithDots)
+            | "." -> Expr.DotGet(x.Expression |> CSharpStatementWalker.ParseExpression |> ExprOps.withParenIfReq, x.Name.WithoutTrivia().ToFullString() |> toLongIdentWithDots)
             | _ -> Expr.LongIdent(false, createErorrCode x)
 
         //| :? MemberBindingExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "MemberBindingExpressionSyntax"
         | :? ObjectCreationExpressionSyntax as x -> 
 
-            let typeName = x.Type.WithoutTrivia().ToFullString() |> toLongIdentWithDots
+            let typeName = x.Type.WithoutTrivia() |> ParserUtil.parseType
 
             let init = 
                 match x.Initializer with
@@ -1027,7 +1038,7 @@ type CSharpStatementWalker() =
             let args = 
                 match x.ArgumentList with 
                 | null -> Expr.Const SynConst.Unit
-                | x -> CSharpStatementWalker.ParseChsarpNode (x, true)
+                | x -> CSharpStatementWalker.ParseChsarpNode x
 
             let args = 
                 match args with
@@ -1035,7 +1046,7 @@ type CSharpStatementWalker() =
                 | Expr.Const SynConst.Unit -> joinArgs (Expr.Tuple [])
                 | _ -> failwithf "Unexpected synax constructing class: %s" <| x.Type.ToFullString()
 
-            Expr.New (false, typeName |> SynType.LongIdent, Expr.Paren args)
+            Expr.New (false, typeName, Expr.Paren args)
         //| :? OmittedArraySizeExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "OmittedArraySizeExpressionSyntax"
         | :? ParenthesizedExpressionSyntax as x -> CSharpStatementWalker.ParseExpression x.Expression
         | :? PostfixUnaryExpressionSyntax as x -> 
@@ -1060,7 +1071,8 @@ type CSharpStatementWalker() =
         //| :? ThrowExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "ThrowExpressionSyntax"
         //| :? TupleExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "TupleExpressionSyntax"
         | :? TypeOfExpressionSyntax as x -> 
-            let ident = x.Type.WithoutTrivia().ToFullString() |> toLongIdentWithDots |> SynType.LongIdent |> List.singleton
+
+            let ident = x.Type |> ParserUtil.parseType |> List.singleton
             printfn "%A" ident
             Expr.TypeApp (Expr.Ident "typeof", ident)
 
@@ -1133,11 +1145,11 @@ type FSharperTreeBuilder() =
                         |> Seq.map (fun y -> 
 
                             if isNull y.NameEquals then 
-                                CSharpStatementWalker.ParseChsarpNode (y.Expression, false) |>  AttributeValue
+                                CSharpStatementWalker.ParseChsarpNode y.Expression |>  AttributeValue
                             else 
                                 NamedAttributeValue 
-                                    (CSharpStatementWalker.ParseChsarpNode (y.NameEquals.Name, false), 
-                                    CSharpStatementWalker.ParseChsarpNode (y.Expression, false)) )
+                                    (CSharpStatementWalker.ParseChsarpNode y.NameEquals.Name, 
+                                    CSharpStatementWalker.ParseChsarpNode y.Expression) )
                         |> Seq.toList
                         
                     {
@@ -1212,11 +1224,10 @@ type FSharperTreeBuilder() =
 
     member this.VisitConstructorDeclaration (node:ConstructorDeclarationSyntax) = 
         {
-            Ctor.Body = Line "" // TODO
-                //node.Body.Statements 
-                //|> Seq.map (fun x -> x.WithoutTrailingTrivia().WithoutLeadingTrivia().ToFullString().Replace(";", ""))
-                //|> Seq.map Line
-                //|> Seq.toList
+            Ctor.Body = 
+                node.Body.Statements
+                |> Seq.toList
+                |> List.map (fun x -> CSharpStatementWalker.ParseChsarpNode(x))
 
             Ctor.Parameters = 
                 node.ParameterList.Parameters 
@@ -1259,6 +1270,13 @@ type FSharperTreeBuilder() =
         let isStatic = 
             node.Modifiers |> Seq.exists (fun x -> x.Kind() = SyntaxKind.StaticKeyword)
 
+        let body = 
+            match Option.ofObj node.Body, Option.ofObj node.ExpressionBody with 
+            | Some body, Some eBody -> Some (body :> CSharpSyntaxNode) // WTF: why is this event possible in the domain. It makes no sense
+            | Some body, _ -> Some (body :> CSharpSyntaxNode)
+            | None, Some expressionBody -> Some (expressionBody :> CSharpSyntaxNode)
+            | _, _ -> None
+                
         {
             Method.Name = node.Identifier.WithoutTrivia().Text
             Method.IsVirtual = node.Modifiers |> Seq.exists (fun x -> x.Kind() = SyntaxKind.VirtualKeyword )
@@ -1290,10 +1308,7 @@ type FSharperTreeBuilder() =
                     else typeArg )
                 |> Seq.toList
             Method.Body =
-                node.Body |> Option.ofObj |> Option.map (fun x -> 
-                    x.Statements 
-                    |> Seq.map CSharpStatementWalker.ParseChsarpNode
-                    |> sequential  )
+                body |> Option.map (CSharpStatementWalker.ParseChsarpNode )
                 |> function 
                 | Some x -> x
                 | None -> Expr.Const SynConst.Unit
@@ -1306,7 +1321,7 @@ type FSharperTreeBuilder() =
                     let args = 
                         match x.ArgumentList with 
                         | null -> None
-                        | x -> CSharpStatementWalker.ParseChsarpNode (x, true) |> Some 
+                        | x -> CSharpStatementWalker.ParseChsarpNode x |> Some 
 
                     name, args ))
                 |> Seq.concat
@@ -1344,15 +1359,20 @@ type FSharperTreeBuilder() =
             | Some e, Some s -> [CSharpStatementWalker.ParseChsarpNode e;] @ (s.Statements |> Seq.map CSharpStatementWalker.ParseChsarpNode |> Seq.toList)
 
         let processAccessorForAccessorType accessor = 
-            node.AccessorList.Accessors 
-            |> Seq.filter (fun x -> x.Kind() = accessor)
-            |> Seq.map parseAccessorDeclaration
-            |> Seq.toList
-            |> List.concat
-            |> function
-            | _::_::_ as xs -> xs |> sequential |> Some
-            | x::[] -> x |> Some
-            | _ -> None
+            match node.AccessorList, accessor with
+            | null, SyntaxKind.GetAccessorDeclaration -> node.ExpressionBody |> CSharpStatementWalker.ParseChsarpNode |> Some
+            | null, SyntaxKind.SetAccessorDeclaration -> None
+            | _, _ -> 
+                node.AccessorList.Accessors 
+
+                |> Seq.filter (fun x -> x.Kind() = accessor)
+                |> Seq.map parseAccessorDeclaration
+                |> Seq.toList
+                |> List.concat
+                |> function
+                | _::_::_ as xs -> xs |> sequential |> Some
+                | x::[] -> x |> Some
+                | _ -> None
 
         let getStatements = processAccessorForAccessorType SyntaxKind.GetAccessorDeclaration
         let setStatements =  processAccessorForAccessorType SyntaxKind.SetAccessorDeclaration
@@ -1365,7 +1385,7 @@ type FSharperTreeBuilder() =
             
         {
             Prop.Name = node.Identifier.WithoutTrivia().Text
-            Type = node.Type.WithoutTrivia().ToFullString()
+            Type = node.Type |> ParserUtil.parseType
             Prop.Get = getStatements 
             Prop.Set = setStatements
             Access = access

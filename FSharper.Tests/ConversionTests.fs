@@ -1,10 +1,11 @@
-namespace Tests
+﻿namespace Tests
 
 open NUnit.Framework
 open FSharper.Core
 open FsUnit
 open System
 open System.IO
+open System.Linq
 
 [<TestFixture>]
 type TestClass () =
@@ -259,7 +260,7 @@ type TestClass () =
                             _foo <- value
                             RaisePropertyChanged("Foo")
 
-                    member val Bar: Baz = null with get, set
+                    member val Bar: Baz = Unchecked.defaultof<Baz> with get, set
                     member this.FooBar = _foo"""
 
         csharp |> Converter.run 
@@ -898,7 +899,8 @@ type TestClass () =
 
         let fsharp = 
              """type TipView<'T, 'Z>(s: string, i: int) =
-                    inherit MvxContentPage<TipViewModel>(message)"""
+                    inherit MvxContentPage<TipViewModel>(message)
+                    do InitializeComponent()"""
 
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
@@ -1329,13 +1331,19 @@ type TestClass () =
                     return $"Members {Members.Join(", ")} joined at {Location} on Day {Day}";
                 }
             }"""
-    
+
         let fsharp = 
              """type MembersJoined(day: int, location: string, [<ParamArray>] members: string []) =
-                    member val QuestId: Guid = null with get, set
-                    member val Day: int = null with get, set
-                    member val Location: string = null with get, set
-                    member val Members: ``string[]`` = null with get, set
+
+                    do
+                        Day <- day
+                        Location <- location
+                        Members <- members
+
+                    member val QuestId: Guid = Unchecked.defaultof<Guid> with get, set
+                    member val Day: int = Unchecked.defaultof<int> with get, set
+                    member val Location: string = Unchecked.defaultof<string> with get, set
+                    member val Members: string [] = Unchecked.defaultof<string []> with get, set
                     member this.ToString(): string = sprintf "Members %O joined at %O on Day %O" (Members.Join(", ")) (Location) (Day)"""
 
         csharp |> Converter.runWithConfig false 
@@ -1369,13 +1377,13 @@ type TestClass () =
     
         let fsharp = 
              """type QuestStarted() =
-                    member val Name: string = null with get, set
-                    member val Id: Guid = null with get, set
+                    member val Name: string = Unchecked.defaultof<string> with get, set
+                    member val Id: Guid = Unchecked.defaultof<Guid> with get, set
                     member this.ToString(): string = sprintf "Quest %O started" (Name)
 
                 type QuestEnded() =
-                    member val Name: string = null with get, set
-                    member val Id: Guid = null with get, set
+                    member val Name: string = Unchecked.defaultof<string> with get, set
+                    member val Id: Guid = Unchecked.defaultof<Guid> with get, set
                     member this.ToString(): string = sprintf "Quest %O ended" (Name)"""
 
         csharp |> Converter.runWithConfig false 
@@ -1416,4 +1424,111 @@ type TestClass () =
 
         csharp |> Converter.runWithConfig false 
         |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)        
+        |> should equal (formatFsharp fsharp)  
+
+    [<Test>]
+    member this.``convert constructor and interface`` () = 
+        let csharp = 
+             """public class AppBootstrapper : ReactiveObject
+                {
+                    public RoutingState Router { get; protected set; }
+
+                    public AppBootstrapper()
+                    {
+                        Router = new RoutingState();
+                        Locator.CurrentMutable.RegisterConstant(this, typeof(IScreen));
+                        Locator.CurrentMutable.Register(() => new MainView(), typeof(IViewFor<MainViewModel>));
+                        Locator.CurrentMutable.Register(() => new SecondView(), typeof(IViewFor<SecondViewModel>));
+
+                        this
+                            .Router
+                            .NavigateAndReset
+                            .Execute(new MainViewModel())
+                            .Subscribe();
+                    }
+                }"""
+
+        let fsharp = 
+             """type AppBootstrapper() =
+                    inherit ReactiveObject()
+
+                    do
+                        Router <- new RoutingState()
+                        Locator.CurrentMutable.RegisterConstant(this, typeof<IScreen>)
+                        Locator.CurrentMutable.Register(fun () -> new MainView(), typeof<IViewFor<MainViewModel>>)
+                        Locator.CurrentMutable.Register(fun () -> new SecondView(), typeof<IViewFor<SecondViewModel>>)
+                        this.Router.NavigateAndReset.Execute(new MainViewModel()).Subscribe()
+
+                    member val Router: RoutingState = Unchecked.defaultof<RoutingState> with get, set"""
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)  
+
+    [<Test>]
+    member this.``convert static class with constants`` () = 
+        let csharp = 
+             """namespace MedsProcessor.Common
+                {
+                    public static class Constants
+                    {
+                        public const string CURRENT_LISTS_URL = "http://www.hzzo.hr/zdravstveni-sustav-rh/trazilica-za-lijekove-s-vazecih-lista/";
+                        public const string ARCHIVE_LISTS_URL = "http://www.hzzo.hr/zdravstveni-sustav-rh/trazilica-za-lijekove-s-vazecih-lista/arhiva-liste-lijekova/";
+                        public const string DOWNLOAD_DIR = "";
+                    }
+                }"""
+
+        let fsharp = 
+             """namespace MedsProcessor.Common
+
+                type Constants() =
+                    let CURRENT_LISTS_URL = "http://www.hzzo.hr/zdravstveni-sustav-rh/trazilica-za-lijekove-s-vazecih-lista/"
+                    let ARCHIVE_LISTS_URL =
+                        "http://www.hzzo.hr/zdravstveni-sustav-rh/trazilica-za-lijekove-s-vazecih-lista/arhiva-liste-lijekova/"
+                    let DOWNLOAD_DIR = "" """
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)  
+
+    [<Test>]
+    member this.``convert expression body with CoalesceExpression`` () = 
+        let csharp = 
+             """public class HzzoMedsDownloadDto
+                {
+                    public string FileName => 
+                        ValidFrom.ToString("yyyy-MM-dd_") +
+                        (Href.Split('/').LastOrDefault() ?? Href.Replace("/", "_").Replace(":", "_")).TrimEnd();
+                }"""
+
+        let fsharp = 
+             """type HzzoMedsDownloadDto() =
+                    member this.FileName =
+                        ValidFrom.ToString("yyyy-MM-dd_") + (Href.Split('/').LastOrDefault()
+                                                             |> Option.ofObj
+                                                             |> Option.defaultValue Href.Replace("/", "_").Replace(":", "_")).TrimEnd()"""
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)  
+
+    [<Test>]
+    member this.``convert generic types`` () = 
+        let csharp = 
+             """static ISet<HzzoMedsDownloadDto> ParseMedsLiElements(IEnumerable<IElement> elems) =>
+                  elems.Aggregate(new HashSet<HzzoMedsDownloadDto>(), (medsList, li) => medsList);"""
+
+        let fsharp = 
+             """static member ParseMedsLiElements(elems: seq<IElement>): ISet<HzzoMedsDownloadDto> =
+                    elems.Aggregate(new HashSet<HzzoMedsDownloadDto>(), fun (medsList, li) -> medsList)"""
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)  
+
+    member this.FileName (ValidFrom:DateTime) (Href:string) =
+        ValidFrom.ToString("yyyy-MM-dd_") + 
+            (Href.Split('/').LastOrDefault()
+                |> Option.ofObj
+                |> Option.defaultValue (Href.Replace("/", "_").Replace(":", "_"))
+            ).TrimEnd()

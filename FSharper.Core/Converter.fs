@@ -218,11 +218,11 @@ module FormatOuput =
         match x.Get, x.Set with 
         | None, None -> 
 
+            let typeArg = Expr.TypeApp (toLongIdent "Unchecked.defaultof", [x.Type])
             SynMemberDefn.AutoProperty 
                 ([],false, 
-                    ident (x.Name, range0), 
-                    SynType.LongIdent (LongIdentWithDots (toIdent x.Type,[range0]) ) |> Some,
-                    MemberKind.PropertyGetSet, memberFlags, PreXmlDoc.PreXmlDocEmpty, x.Access, SynExpr.Null range0, None, range0
+                    ident (x.Name, range0), Some x.Type,
+                    MemberKind.PropertyGetSet, memberFlags, PreXmlDoc.PreXmlDocEmpty, x.Access, toSynExpr typeArg, None, range0
                       ) |> List.singleton
 
         | Some getter, None -> [makeGetter getter]
@@ -326,12 +326,12 @@ module FormatOuput =
 
                 SynMemberDefn.Interface (x,method |> toMethod [] |> List.singleton |> Some, range0))
 
+        let mainCtor = 
+            cn.Constructors 
+            |> List.sortByDescending (fun x -> x.Parameters.Length)
+            |> List.tryHead
+            
         let ctors = 
-
-            let mainCtor = 
-                cn.Constructors 
-                |> List.sortByDescending (fun x -> x.Parameters.Length)
-                |> List.tryHead
 
             let ctor = 
                 mainCtor
@@ -341,6 +341,7 @@ module FormatOuput =
                 |> function 
                 | Some c -> c
                 | None -> SynMemberDefn.ImplicitCtor (None,[],[],None, range0)
+
 
             cn.BaseClass |> Option.map (fun baseClass -> 
 
@@ -361,7 +362,22 @@ module FormatOuput =
             | Some x -> [ctor; x]
             | None -> [ctor]
 
-        SynTypeDefn.TypeDefn (x, SynTypeDefnRepr.ObjectModel (TyconUnspecified, ctors @ fields @ properties @ methods @ interfaces, range0), [], range0)
+        let ctorInit = 
+
+            match mainCtor with
+            | None -> [] 
+            | Some mainCtor ->  
+                let expr = mainCtor.Body |> ParserUtil.sequential |> toSynExpr
+                match expr with
+                | SynExpr.Const (SynConst.Unit, r) -> [] // `do ()` means nothings
+                | _ -> 
+                    SynMemberDefn.LetBindings([
+                    SynBinding.Binding (None, DoBinding, false, false, [], PreXmlDocEmpty, 
+                        SynValData (None,SynValInfo ([],SynArgInfo ([],false,None)),None), SynPat.Const (SynConst.Unit, range0),
+                        None, expr, range0, SequencePointInfoForBinding.NoSequencePointAtDoBinding)
+                    ], false, false, range0) |> List.singleton
+
+        SynTypeDefn.TypeDefn (x, SynTypeDefnRepr.ObjectModel (TyconUnspecified, ctors @ ctorInit @ fields @ properties @ methods @ interfaces, range0), [], range0)
         |> List.singleton
         |> (fun x -> SynModuleDecl.Types (x, range0))
 
@@ -415,7 +431,10 @@ let toFsharpSynaxTree input =
         let ns = {Name = DefaultNames.namespaceName; Interfaces = []; Classes = [] }           
         FormatOuput.toNamespace ns [FormatOuput.createOpenStatements us] |> List.singleton |> FormatOuput.toFile
 
-    | Namespace ns -> FormatOuput.toNamespace ns [] |> List.singleton |> FormatOuput.toFile
+    | Namespace ns -> 
+        let classes = ns.Classes |> List.map FormatOuput.toClass
+        FormatOuput.toNamespace ns classes |> List.singleton |> FormatOuput.toFile
+        
     | Class cn ->  cn  |> FormatOuput.toClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
     //| Method m ->  m |> FormatOuput.toMethod [m.Name] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
     //| FSharper.Core.Field f ->  f |> Seq.head |> FormatOuput.inMethod |> FormatOuput.toMethod [] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
