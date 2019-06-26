@@ -1005,8 +1005,8 @@ type CSharpStatementWalker() =
                 |> Expr.Tuple 
                 |> Expr.Paren
 
-            let name = x.Expression |> CSharpStatementWalker.ParseExpression
-            Expr.App (ExprAtomicFlag.NonAtomic, false, name, args)
+            let expr = x.Expression |> CSharpStatementWalker.ParseExpression
+            Expr.App (ExprAtomicFlag.Atomic, false, expr, args)
 
         //| :? IsPatternExpressionSyntax as x -> ()
         | :? LiteralExpressionSyntax as x -> 
@@ -1014,9 +1014,15 @@ type CSharpStatementWalker() =
         //| :? MakeRefExpressionSyntax as x -> ()
         | :? MemberAccessExpressionSyntax as x ->
 
-            //x.Name
             match x.OperatorToken.Text with 
-            | "." -> Expr.DotGet(x.Expression |> CSharpStatementWalker.ParseExpression |> ExprOps.withParenIfReq, x.Name.WithoutTrivia().ToFullString() |> toLongIdentWithDots)
+            | "." -> 
+                let invocation = x.Expression |> CSharpStatementWalker.ParseExpression |> ExprOps.withParenIfReq               
+                let (longIdent, types) = x.Name.WithoutTrivia() |> parseType |> synTypeToExpr 
+                let dotGet = Expr.DotGet (invocation, longIdent)
+
+                match types with
+                | [] -> dotGet
+                | types -> Expr.TypeApp (dotGet, types)
             | _ -> Expr.LongIdent(false, createErorrCode x)
 
         //| :? MemberBindingExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "MemberBindingExpressionSyntax"

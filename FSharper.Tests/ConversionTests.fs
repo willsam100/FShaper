@@ -1524,11 +1524,26 @@ type TestClass () =
 
         csharp |> Converter.runWithConfig false 
         |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)  
+        |> should equal (formatFsharp fsharp)
 
-    member this.FileName (ValidFrom:DateTime) (Href:string) =
-        ValidFrom.ToString("yyyy-MM-dd_") + 
-            (Href.Split('/').LastOrDefault()
-                |> Option.ofObj
-                |> Option.defaultValue (Href.Replace("/", "_").Replace(":", "_"))
-            ).TrimEnd()
+    [<Test>]
+    member this.``convert generic types in method`` () = 
+        let csharp = 
+             """public void ConfigureServices(IServiceCollection services)
+        		{
+        			services.AddHttpClient();
+        			services.AddAngleSharp();
+        			services.AddSingleton<HzzoHtmlScraper>();
+        			services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1);
+        		}"""
+
+        let fsharp = 
+             """member this.ConfigureServices(services: IServiceCollection) =
+                    services.AddHttpClient()
+                    services.AddAngleSharp()
+                    services.AddSingleton<HzzoHtmlScraper>()
+                    services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_1)"""
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)  

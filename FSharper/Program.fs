@@ -23,14 +23,7 @@ let main argv =
         let input = 
                  """type Foo() =
                      member this.Index(scraper: HzzoHtmlScraper): Task<ActionResult> =
-                        async {
-                                let mutable startTime = DateTime.Now
-                                let! meds = scraper.Run() |> Async.AwaitTask
-                                let mutable totalTime = startTime - DateTime.Now 
-                                return Ok(sprintf "Done! Handler duration: %O" (totalTime.Duration())
-                                                + Environment.NewLine + Environment.NewLine
-                                                + (TypeSyntax.Join(Environment.NewLine, meds.Select(fun x -> x.FileName))))
-                         } |> Async.StartAsTask """ // Add expected F# syntax here
+                        services().AddSingleton<HzzoHtmlScraper>()""" // Add expected F# syntax here
 
         let placeholderFilename = "/home/user/Test.fsx"
         let tree = TreeOps.getUntypedTree(placeholderFilename, input)

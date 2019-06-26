@@ -185,6 +185,15 @@ module ParserUtil =
             | _ -> n.WithoutTrivia().ToString() |> fixKeywords |> toLongIdentWithDots |> SynType.LongIdent
         | x -> x.WithoutTrivia().ToString() |> fixKeywords |> toLongIdentWithDots |> SynType.LongIdent 
 
+    let rec synTypeToExpr t = 
+        let rec loop t (names, types) = 
+            match t with 
+            | SynType.App  (x, None, typeArgs, [], None, false, range0) -> loop x (names, typeArgs @ types) //Expr.TypeApp (synTypeToExpr x, typeArgs)
+            | SynType.Array (a,b,c) ->  loop b (names, types) //synTypeToExpr b
+            | SynType.LongIdent l -> (l :: names, types)
+        let (names, types) = loop t ([], [])        
+        names |> List.map joinLongIdentWithDots |> String.concat "." |> toLongIdentWithDots, types
+
     let createErorrCode (e:SyntaxNode) = 
         let c = CancellationToken()
         printfn "Input C#:"
