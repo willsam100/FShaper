@@ -355,7 +355,7 @@ type ClassName = {
 type Field = {
     IsPublic: bool // this syntax is not supported in F# 
     Name:string
-    Type: string
+    Type: SynType
     Initilizer:Expr option
     IsConst : bool
     IsStatic: bool
@@ -393,10 +393,10 @@ type Class = {
         TypeParameters = []
     }
 
+type InferfaceMethod = Method of name:Ident * parameters:SynType list
 type Interface = {
-    Name:string
-    // TDOO Generics
-    Methods:string list
+    Name: Ident
+    Methods:InferfaceMethod list
 }
 
 type UsingStatement = {
@@ -411,8 +411,8 @@ type Namespace = {
 
 type File = 
     | FileWithUsingNamespace of usingStatement:UsingStatement list * namespaces: Namespace list
-    | FileWithUsingNamespaceAndDefault of usingStatement:UsingStatement list * namespaces: Namespace list * classes:Class list
-    | FileWithUsing of usingStatement:UsingStatement list * classes:Class list
+    | FileWithUsingNamespaceAndDefault of usingStatement:UsingStatement list * namespaces: Namespace list * interfaces: Interface list * classes:Class list
+    | FileWithUsing of usingStatement:UsingStatement list * interfaces: Interface list * classes:Class list
 
 //type File = {
 //    UsingStatements:UsingStatement list

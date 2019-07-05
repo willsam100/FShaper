@@ -21,9 +21,8 @@ let main argv =
     // the syntax can then be used to idently how to construct it from the CSharp syntax
     else
         let input = 
-                 """type Foo() =
-                     member this.Index(scraper: HzzoHtmlScraper): Task<ActionResult> =
-                        services().AddSingleton<HzzoHtmlScraper>()""" // Add expected F# syntax here
+                 """type IService = 
+                        abstract member Serve: unit -> unit""" // Add expected F# syntax here
 
         let placeholderFilename = "/home/user/Test.fsx"
         let tree = TreeOps.getUntypedTree(placeholderFilename, input)

@@ -131,6 +131,7 @@ module TreeOps =
         | Expr.DoBang e -> SynExpr.DoBang (toSynExpr e, range0)
         //| Fixed of expr:Expr
 
+        | Expr.TypeTest (a,b) -> SynExpr.TypeTest (toSynExpr a,b,range0)
         //| Expr.ReturnFromIf e -> toSynExpr e //SynExpr.Const (SynConst.Unit, range0)
 
     let rec (|TypeNameContains|_|) text v = 

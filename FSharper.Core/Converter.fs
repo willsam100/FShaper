@@ -54,8 +54,6 @@ module FormatOuput =
 
     let santizeCode methodNames expr = 
 
-        
-    
         let e = 
             expr
             |> simplifyTree
@@ -122,7 +120,7 @@ module FormatOuput =
                     Some {
                         MemberFlags.IsInstance = not x.IsStatic
                         MemberFlags.IsDispatchSlot = false 
-                        MemberFlags.IsOverrideOrExplicitImpl = false 
+                        MemberFlags.IsOverrideOrExplicitImpl = x.IsOverride 
                         MemberFlags.IsFinal = false
                         MemberFlags.MemberKind = MemberKind.Member
                     }, SynValInfo (argInfos, SynArgInfo ([], false, None)), None),
@@ -245,7 +243,7 @@ module FormatOuput =
         let init = 
             match x.Initilizer with 
             | Some x -> x
-            | None -> Expr.Null
+            | None -> Expr.TypeApp (toLongIdent "Unchecked.defaultof", [x.Type])
 
         let binding = 
             SynBinding.Binding (None, SynBindingKind.NormalBinding, false, not x.IsConst, [], PreXmlDocEmpty, 
@@ -256,7 +254,29 @@ module FormatOuput =
                     Pats ([]), None, range0 ), None, 
                     toSynExpr init, range0 , SequencePointAtBinding range0)
         SynMemberDefn.LetBindings ([binding], x.IsStatic, false, range0)
-       
+
+    let toInterface (cn:Interface) =    
+        let types = 
+            cn.Methods |> List.map (fun (InferfaceMethod.Method (name, parameters)) -> 
+                let parameters = parameters |> List.reduce (fun a b -> SynType.Fun (a, b, range0))
+                let valsfn = 
+                    ValSpfn ([], name, SynValTyparDecls ([], true, []),
+                                parameters,
+                                SynValInfo ([[SynArgInfo ([],false,None)]], SynArgInfo ([],false,None)),
+                                false,false, PreXmlDocEmpty,
+                                None,  None, range0)
+                            
+                SynMemberDefn.AbstractSlot (    
+                    valsfn,
+                    {IsInstance = true;
+                          IsDispatchSlot = true;
+                          IsOverrideOrExplicitImpl = false;
+                          IsFinal = false;
+                          MemberKind = MemberKind.Member;}, range0) )
+
+        let info = ComponentInfo ([], [], [], [cn.Name], PreXmlDocEmpty, false, None, range0)
+        let model = SynTypeDefnRepr.ObjectModel (TyconUnspecified,types,range0)
+        TypeDefn (info, model, [], range0) 
 
     let toClass (cn:Class) = 
         let att = 
@@ -307,19 +327,28 @@ module FormatOuput =
         let fields = cn.Fields |> List.map toLet
 
         let interfaces = 
+
             cn.ImplementInterfaces 
             |> List.map (fun x -> 
+                let (name, expr, interfaceParameters) = 
+                    match cn.Methods with 
+                    | [x] -> 
+                        let args = x.Parameters |> List.map SynPat.getIdent |> Expr.Tuple
+                        let invoke = sprintf "this.%s" x.Name |> toLongIdent
+                        let app = ExprOps.toApp invoke args
+                        x.Name, app, x.Parameters
+                    | _ -> "Todo", Expr.Const SynConst.Unit, []
 
                 let method = {
                     Method.Accessibility = None
-                    Method.Body = Expr.Const SynConst.Unit
-                    Method.Name = "Todo"
+                    Method.Body = expr
+                    Method.Name = name
                     Method.IsAsync = false
                     Method.IsOverride = false
                     Method.IsVirtual = false
                     Method.IsPrivate = true
                     Method.IsStatic = false
-                    Method.Parameters = []
+                    Method.Parameters = interfaceParameters
                     Method.Attributes = []
                     Method.ReturnType = SynType.LongIdent (toLongIdentWithDots "unit")
                 }
@@ -362,38 +391,117 @@ module FormatOuput =
             | Some x -> [ctor; x]
             | None -> [ctor]
 
-        let ctorInit = 
-
+        let (ctors, fields, ctorInit) = 
             match mainCtor with
-            | None -> [] 
+            | None -> ctors, fields, [] 
             | Some mainCtor ->  
-                let expr = mainCtor.Body |> ParserUtil.sequential |> toSynExpr
-                match expr with
-                | SynExpr.Const (SynConst.Unit, r) -> [] // `do ()` means nothings
-                | _ -> 
-                    SynMemberDefn.LetBindings([
-                    SynBinding.Binding (None, DoBinding, false, false, [], PreXmlDocEmpty, 
-                        SynValData (None,SynValInfo ([],SynArgInfo ([],false,None)),None), SynPat.Const (SynConst.Unit, range0),
-                        None, expr, range0, SequencePointInfoForBinding.NoSequencePointAtDoBinding)
-                    ], false, false, range0) |> List.singleton
+                // let body = mainCtor.Body
+                // printfn "%d" mainCtor.Body.Length
+                // printfn "%d" mainCtor.Parameters.Length
+                
+                let (body, removedFields) = 
+                    mainCtor.Body |> List.fold (fun (acc, removed) x ->
+                        match x with 
+                        | Expr.LongIdentSet (a,b) -> 
+                            let name = joinLongIdentWithDots a |> (fun x -> x.Replace("this.", ""))
+                            let matchedName = 
+                                mainCtor.Parameters |> List.tryFind (fun x -> 
+                                    let ident = SynSimplePat.getIdent x
+                                    name.Contains ident.idText)
 
-        SynTypeDefn.TypeDefn (x, SynTypeDefnRepr.ObjectModel (TyconUnspecified, ctors @ ctorInit @ fields @ properties @ methods @ interfaces, range0), [], range0)
+                            match matchedName with
+                            | Some cName -> 
+                                let ident = SynSimplePat.getIdent cName
+                                if name = ident.idText then 
+                                    (acc, Choice1Of2 (ident.idText) :: removed)    
+                                else 
+                                    (acc, Choice2Of2 (name, ident.idText) :: removed)                                    
+                            | None -> (x :: acc, removed)                            
+                        | _ -> x :: acc, removed
+                    ) ([], []) 
+                    |> (fun (body, removed) -> body |> List.rev, removed) // preseve the ordering of constructor lines
+
+                let ctorPats = 
+                    mainCtor.Parameters 
+                    |> List.map (fun ident -> 
+                        let cIdent = SynSimplePat.getIdent ident
+                        let ctorField =
+                            removedFields 
+                            |> List.choose (function Choice2Of2 (name, cName) -> Some (name, cName) | Choice1Of2 _ -> None)
+                            |> List.tryFind (fun (name, ctorName) -> ctorName = cIdent.idText)
+                            |> Option.map fst
+                        match ctorField with 
+                        | Some newName ->                          
+                            ident |> SynSimplePat.renameIdent (fun x -> Ident(newName, x.idRange))
+                        | None -> ident                        
+                    )
+
+                let ctors = 
+                    match ctors with 
+                    | c::cs -> 
+                        match c with 
+                        | SynMemberDefn.ImplicitCtor (a,b,_,d,e) -> SynMemberDefn.ImplicitCtor (a,b,ctorPats, d,e) :: cs
+                        | _ -> cs
+                    | [] -> []                    
+
+                let fields = 
+
+                    let names = 
+                        removedFields 
+                        |> List.map (function | Choice1Of2 x -> x | Choice2Of2 x -> x |> fst)
+
+                    let isNameMatch fieldIdent = 
+                        names |> List.exists (fun x -> x.Contains fieldIdent)
+
+                    fields
+                    |> List.filter (fun x -> 
+                        match x with 
+                        | SynMemberDefn.LetBindings (a,_,_,_) -> 
+                            a |> List.exists (function 
+                                | Binding (_,_,_,_,_,_,_,name,_,_,_,_) -> 
+                                    match name with 
+                                    | SynPat.LongIdent (name,_,_,_,_,_) -> joinLongIdentWithDots name |> isNameMatch |> not
+                                    | _ -> true )
+                        | _ -> true ) 
+
+                let expr = body |> sequential |> toSynExpr
+                match expr with
+                | SynExpr.Const (SynConst.Unit, _) -> ctors, fields, [] // `do ()` means nothings
+                | _ -> 
+                    let ctorInit = 
+                        SynMemberDefn.LetBindings([
+                            SynBinding.Binding (None, DoBinding, false, false, [], PreXmlDocEmpty, 
+                                SynValData (None,SynValInfo ([],SynArgInfo ([],false,None)),None), SynPat.Const (SynConst.Unit, range0),
+                                None, expr, range0, SequencePointInfoForBinding.NoSequencePointAtDoBinding)
+                            ], false, false, range0) |> List.singleton
+                    ctors, fields, ctorInit                        
+
+        SynTypeDefn.TypeDefn (x, SynTypeDefnRepr.ObjectModel (TyconUnspecified, ctors @ fields @ ctorInit @ properties @ methods @ interfaces, range0), [], range0)
         |> List.singleton
         |> (fun x -> SynModuleDecl.Types (x, range0))
 
 let toFsharpSynaxTree input = 
+
+    let parseInterfaces = 
+        List.map FormatOuput.toInterface >> (fun xs -> 
+            match xs with 
+            | [] -> [] 
+            | _ -> SynModuleDecl.Types (xs, range0) |> List.singleton)
+
     match input with 
     | File f -> 
 
         let defaultNamespace = {Name = DefaultNames.namespaceName; Interfaces = []; Classes = [] }
 
+
         match f with 
-        | FileWithUsing (usings, classes) -> 
-            let ns = {defaultNamespace with Classes = classes }
+        | FileWithUsing (usings, interfaces, classes) -> 
+            let ns = {defaultNamespace with Interfaces = interfaces; Classes = classes }
             let mods = usings |> List.map FormatOuput.createOpenStatements
             let namespaces = 
                 let classes = ns.Classes |> List.map FormatOuput.toClass
-                [FormatOuput.toNamespace ns (mods @ classes)]
+                let interfaces = ns.Interfaces |> parseInterfaces
+                [FormatOuput.toNamespace ns (mods @ interfaces @ classes)]
             FormatOuput.toFile namespaces
 
         | FileWithUsingNamespace (usngs, namespaces) -> 
@@ -407,23 +515,27 @@ let toFsharpSynaxTree input =
                 ns |> List.map (fun x -> 
                     let classes = 
                         x.Classes |> List.map FormatOuput.toClass
-                    FormatOuput.toNamespace x (mods @ classes) )
+                    let interfaces = x.Interfaces |> parseInterfaces
+                    FormatOuput.toNamespace x (mods @ interfaces @ classes) )
             FormatOuput.toFile namespaces
 
-        | FileWithUsingNamespaceAndDefault (usngs, namespaces, classes) -> 
-            let mods = usngs |> List.map FormatOuput.createOpenStatements 
+        | FileWithUsingNamespaceAndDefault (usings, namespaces, interfaces, classes) -> 
+            let mods = usings |> List.map FormatOuput.createOpenStatements 
             let ns = 
-                match namespaces, classes with 
-                | [], [] -> [defaultNamespace]
-                | [], classes -> [{defaultNamespace with Classes = classes }]
-                | ns, [] -> ns
-                | ns, classes -> {defaultNamespace with Classes = classes } :: ns
+                match namespaces, interfaces, classes with 
+                | [], [], [] -> [defaultNamespace]
+                | [], interfaces, classes -> [{defaultNamespace with Interfaces = interfaces; Classes = classes }]
+                | ns, [], [] -> ns
+                | ns, interfaces, [] -> {defaultNamespace with Interfaces = interfaces } :: ns
+                | ns, [], classes -> {defaultNamespace with Classes = classes } :: ns
+                | ns, interfaces, classes -> {defaultNamespace with Interfaces = interfaces; Classes = classes } :: ns
 
             let namespaces = 
                 ns |> List.map (fun x -> 
                     let classes = 
                         x.Classes |> List.map FormatOuput.toClass
-                    FormatOuput.toNamespace x (mods @ classes) )
+                    let interfaces = x.Interfaces |> parseInterfaces
+                    FormatOuput.toNamespace x (mods @ interfaces @ classes) )
             FormatOuput.toFile namespaces
 
 
@@ -433,7 +545,8 @@ let toFsharpSynaxTree input =
 
     | Namespace ns -> 
         let classes = ns.Classes |> List.map FormatOuput.toClass
-        FormatOuput.toNamespace ns classes |> List.singleton |> FormatOuput.toFile
+        let interfaces = ns.Interfaces |> parseInterfaces
+        FormatOuput.toNamespace ns (interfaces @ classes) |> List.singleton |> FormatOuput.toFile
         
     | Class cn ->  cn  |> FormatOuput.toClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
     //| Method m ->  m |> FormatOuput.toMethod [m.Name] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
@@ -499,6 +612,15 @@ let runWithConfig validateCode (input:string) =
             }
 
     let tree = 
+
+        let input = 
+            input.Split('\n')
+            |> Array.map (fun x -> 
+                if x.TrimStart().Trim().StartsWith "..."then 
+                    "//" + x 
+                else x )
+            |> String.concat "\n"
+
         SyntaxFactory.ParseSyntaxTree (text = input, encoding = Encoding.UTF8)
         |> (fun x -> 
             let t = x.GetRoot()
@@ -524,7 +646,9 @@ let runWithConfig validateCode (input:string) =
 
                 if Seq.isEmpty <| x.GetDiagnostics() then Some x 
                 else
-                    printfn "Invalid or Incomplete C#"
+                    let error = x.GetDiagnostics() |> Seq.head |> (fun x -> 
+                        sprintf "%s %s" (x.Descriptor.Title.ToString()) (x.Descriptor.Description.ToString()))
+                    printfn "Invalid or Incomplete C#: %s" error
                     x.GetDiagnostics() |> Seq.iter (printfn "%A")
                     None
         )

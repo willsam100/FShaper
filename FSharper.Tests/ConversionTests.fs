@@ -6,9 +6,10 @@ open FsUnit
 open System
 open System.IO
 open System.Linq
+open Swensen.Unquote.Assertions
 
 [<TestFixture>]
-type TestClass () =
+type ConversionTests () =
 
     let formatFsharp (s:string) = 
 
@@ -29,92 +30,6 @@ type TestClass () =
                "open MvvmCross.Forms.Views
                 open TipCalc.Core.ViewModels")
 
-    [<Test>]
-    member this.``class with static main method`` () = 
-        let csharp = 
-             """using System;
-
-                public class Program
-                {
-                    static void Main(string[] args)
-                    {
-                        Console.WriteLine("Hello, World");
-                    } 
-                }"""
-
-        let fsharp = 
-             """open System
-                
-                type Program() =
-                    static member Main(args: string []) = Console.WriteLine("Hello, World")"""
-                   
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
-
-
-    [<Test>]
-    member this.``class with static field`` () = 
-        let csharp = 
-             """public class Program
-                {
-                    static foo c = "hello, world";
-                }"""
-
-        let fsharp = 
-             """type Program() =
-                    static let mutable c = "hello, world" """
-
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
-
-    [<Test>]
-    member this.``class with static and instance methods - correct prefix for method calls`` () = 
-        let csharp = 
-             """public class Program
-                {
-                    public static void Main()
-                    {
-                        var p = new Program();
-                        p.FooInstance();
-                    }
-                    
-                    public static void FooStatic() 
-                    {
-                            Console.WriteLine($"Foo Static");   
-                    }
-                    
-                    public void FooInstance()
-                    {
-                        FooStatic();
-                        BarInstance();
-                    }
-        
-                    private void BarInstance()
-                    {
-                        Console.WriteLine($"Bar instance private"); 
-                    }
-                }"""
-
-        let fsharp = 
-             """type Program() =
-
-                    static member Main() =
-                        let mutable p = new Program()
-                        p.FooInstance()
-
-                    static member FooStatic() = Console.WriteLine(sprintf "Foo Static")
-
-                    member this.FooInstance() =
-                        Program.FooStatic()
-                        this.BarInstance()
-
-                    member private this.BarInstance() = Console.WriteLine(sprintf "Bar instance private") """
-            
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
 
     [<Test>]
     member this.``array initlization`` () = 
@@ -128,6 +43,19 @@ type TestClass () =
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``array initlization with values`` () = 
+        let csharp = 
+             """string[] values = { "12", "31.", "5.8:32:16", "12:12:15.95", ".12"};"""
+
+        let fsharp = 
+             """let mutable values = [| "12"; "31."; "5.8:32:16"; "12:12:15.95"; ".12" |]
+                ()"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)        
 
     [<Test>]
     member this.``parse chars`` () = 
@@ -282,27 +210,6 @@ type TestClass () =
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
 
-
-    [<Test>]
-    member this.``Can Android Application`` () = 
-        let csharp = 
-            """[Activity(Label = "Activity A", MainLauncher = true)]
-                public class MainApplication : MvxAndroidApplication
-                {
-                    public MainApplication(IntPtr javaReference, JniHandleOwnership transfer) : base(javaReference, transfer)
-                    {
-                    }
-                }"""
-
-        let fsharp = 
-            """[<Activity(Label = "Activity A", MainLauncher = true)>]
-                type MainApplication(javaReference: IntPtr, transfer: JniHandleOwnership) =
-                    inherit MvxAndroidApplication(javaReference, transfer)"""
-                   
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
-
     [<Test>]
     member this.``can convert if statements`` () = 
         let csharp = 
@@ -334,60 +241,6 @@ type TestClass () =
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
-
-    [<Test>]
-    member this.``mulitple attributes`` () = 
-        let csharp = 
-             """using System;
-                using Android.App;
-                using Firebase.Iid;
-                using Android.Util;
-
-                namespace FCMClient
-                {
-                    [Service]
-                    [IntentFilter(new[] { "com.google.firebase.INSTANCE_ID_EVENT" })]
-                    public class MyFirebaseIIDService : FirebaseInstanceIdService
-                    {
-                        const string TAG = "MyFirebaseIIDService";
-                        public override void OnTokenRefresh()
-                        {
-                            var refreshedToken = FirebaseInstanceId.Instance.Token;
-                            Log.Debug(TAG, "Refreshed token: " + refreshedToken);
-                            SendRegistrationToServer(refreshedToken);
-                        }
-                        void SendRegistrationToServer(string token)
-                        {
-                            // Add custom implementation, as needed.
-                        }
-                    }
-                }"""
-
-        let fsharp = 
-            """namespace FCMClient
-
-                open Android.Util
-                open Firebase.Iid
-                open System
-                open Android.App
-
-                [<Service; IntentFilter([| "com.google.firebase.INSTANCE_ID_EVENT" |])>]
-                type MyFirebaseIIDService() =
-                    inherit FirebaseInstanceIdService()
-                    let TAG = "MyFirebaseIIDService"
-
-                    member this.OnTokenRefresh() =
-                        let mutable refreshedToken = FirebaseInstanceId.Instance.Token
-                        Log.Debug(TAG, "Refreshed token: " + (refreshedToken.ToString()))
-                        this.SendRegistrationToServer(refreshedToken)
-                
-                    member this.SendRegistrationToServer(token: string) = ()"""
-                   
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
-
-        
 
     [<Test>]
     member this.``single line`` () = 
@@ -588,26 +441,6 @@ type TestClass () =
         |> should equal (formatFsharp fsharp)
 
     [<Test>]
-    member this.``can convert class constructor with subclass args`` () = 
-        let csharp = 
-             """[Activity(Label = "Activity A", MainLauncher = true)]
-                public class MainApplication : MvxAndroidApplication
-                {
-                    public MainApplication(IntPtr javaReference, JniHandleOwnership transfer) : base(javaReference, transfer)
-                    {
-                    }
-                } """
-
-        let fsharp = 
-             """[<Activity(Label = "Activity A", MainLauncher = true)>]
-                type MainApplication(javaReference: IntPtr, transfer: JniHandleOwnership) =
-                    inherit MvxAndroidApplication(javaReference, transfer)"""
-                       
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
-
-    [<Test>]
     member this.``convert convert not statement`` () = 
         let csharp = 
             """
@@ -665,289 +498,6 @@ type TestClass () =
                             sprintf "Args: %O%O%O, Index: %O" (e.Action) (e.NewItems) (e.OldItems) (e.OldStartingIndex)
                         ())"""
                        
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
-
-
-
-    [<Test>]
-    member this.``convert full file - namespace with class`` () = 
-        let csharp = 
-         """using System;
-            using System.Collections.Specialized;
-            using System.Windows.Input;
-            using Android.App;
-            using Android.Views;
-            using Android.Widget;
-            using MvvmCross.Binding.BindingContext;
-            using MvvmCross.Navigation;
-            using MvvmCross.ViewModels;
-
-            namespace StarWarsSample.Forms.Droid
-            {
-                // This class is never actually executed, but when Xamarin linking is enabled it does how to ensure types and properties
-                // are preserved in the deployed app
-                [Android.Runtime.Preserve(AllMembers = true)]
-                public class LinkerPleaseInclude
-                {
-                    public void Include(Button button)
-                    {
-                        button.Click += (s, e) => button.Text = button.Text + "";
-                    }
-
-                public void Include(CheckBox checkBox)
-                {
-                    checkBox.CheckedChange += (sender, args) => checkBox.Checked = !checkBox.Checked;
-                }
-
-                public void Include(View view)
-                {
-                    view.Click += (s, e) => view.ContentDescription = view.ContentDescription + "";
-                }
-
-                public void Include(TextView text)
-                {
-                    text.AfterTextChanged += (sender, args) => text.Text = "" + text.Text;
-                    text.Hint = "" + text.Hint;
-                }
-
-                public void Include(CheckedTextView text)
-                {
-                    text.AfterTextChanged += (sender, args) => text.Text = "" + text.Text;
-                    text.Hint = "" + text.Hint;
-                }
-
-                public void Include(CompoundButton cb)
-                {
-                    cb.CheckedChange += (sender, args) => cb.Checked = !cb.Checked;
-                }
-
-                public void Include(SeekBar sb)
-                {
-                    sb.ProgressChanged += (sender, args) => sb.Progress = sb.Progress + 1;
-                }
-
-                public void Include(RadioGroup radioGroup)
-                {
-                    radioGroup.CheckedChange += (sender, args) => radioGroup.Check(args.CheckedId);
-                }
-
-                public void Include(RadioButton radioButton)
-                {
-                    radioButton.CheckedChange += (sender, args) => radioButton.Checked = args.IsChecked;
-                }
-
-                public void Include(RatingBar ratingBar)
-                {
-                    ratingBar.RatingBarChange += (sender, args) => ratingBar.Rating = 0 + ratingBar.Rating;
-                }
-
-                public void Include(Activity act)
-                {
-                    act.Title = act.Title + "";
-                }
-
-                public void Include(INotifyCollectionChanged changed)
-                {
-                    changed.CollectionChanged += (s, e) => { var test = $"{e.Action}{e.NewItems}{e.NewStartingIndex}{e.OldItems}"; };
-                }
-
-                public void Include(ICommand command)
-                {
-                    command.CanExecuteChanged += (s, e) => { if (command.CanExecute(null)) command.Execute(null); };
-                }
-
-                public void Include(MvvmCross.IoC.MvxPropertyInjector injector)
-                {
-                    injector = new MvvmCross.IoC.MvxPropertyInjector();
-                }
-
-                public void Include(System.ComponentModel.INotifyPropertyChanged changed)
-                {
-                    changed.PropertyChanged += (sender, e) =>
-                    {
-                        var test = e.PropertyName;
-                    };
-                }
-
-                public void Include(MvxTaskBasedBindingContext context)
-                {
-                    context.Dispose();
-                    var context2 = new MvxTaskBasedBindingContext();
-                    context2.Dispose();
-                }
-
-                public void Include(MvxNavigationService service, IMvxViewModelLoader loader)
-                {
-                    service = new MvxNavigationService(null, loader);
-                }
-
-                public void Include(ConsoleColor color)
-                {
-                    Console.Write("");
-                    Console.WriteLine("");
-                    color = Console.ForegroundColor;
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.ForegroundColor = ConsoleColor.Magenta;
-                    Console.ForegroundColor = ConsoleColor.White;
-                    Console.ForegroundColor = ConsoleColor.Gray;
-                    Console.ForegroundColor = ConsoleColor.DarkGray;
-                }
-
-                public void Include(MvvmCross.Plugin.Json.Plugin plugin)
-                {
-                    plugin.Load();
-                }
-            }
-        }"""
-
-        let fsharp = 
-             """namespace StarWarsSample.Forms.Droid
-
-                open MvvmCross.ViewModels
-                open MvvmCross.Navigation
-                open MvvmCross.Binding.BindingContext
-                open Android.Widget
-                open Android.Views
-                open Android.App
-                open System.Windows.Input
-                open System
-                open System.Collections.Specialized
-
-                [<Android.Runtime.Preserve(AllMembers = true)>]
-                type LinkerPleaseInclude() =
-                    member this.Include(button: Button) = button.Click.AddHandler<_>(fun (s, e) -> button.Text <- button.Text + "")
-                    member this.Include(checkBox: CheckBox) =
-                        checkBox.CheckedChange.AddHandler<_>(fun (sender, args) -> checkBox.Checked <- not checkBox.Checked)
-                    member this.Include(view: View) =
-                        view.Click.AddHandler<_>(fun (s, e) -> view.ContentDescription <- view.ContentDescription + "")
-
-                    member this.Include(text: TextView) =
-                        text.AfterTextChanged.AddHandler<_>(fun (sender, args) -> text.Text <- "" + text.Text)
-                        text.Hint <- "" + text.Hint
-
-                    member this.Include(text: CheckedTextView) =
-                        text.AfterTextChanged.AddHandler<_>(fun (sender, args) -> text.Text <- "" + text.Text)
-                        text.Hint <- "" + text.Hint
-
-                    member this.Include(cb: CompoundButton) =
-                        cb.CheckedChange.AddHandler<_>(fun (sender, args) -> cb.Checked <- not cb.Checked)
-                    member this.Include(sb: SeekBar) =
-                        sb.ProgressChanged.AddHandler<_>(fun (sender, args) -> sb.Progress <- sb.Progress + 1)
-                    member this.Include(radioGroup: RadioGroup) =
-                        radioGroup.CheckedChange.AddHandler<_>(fun (sender, args) -> radioGroup.Check(args.CheckedId))
-                    member this.Include(radioButton: RadioButton) =
-                        radioButton.CheckedChange.AddHandler<_>(fun (sender, args) -> radioButton.Checked <- args.IsChecked)
-                    member this.Include(ratingBar: RatingBar) =
-                        ratingBar.RatingBarChange.AddHandler<_>(fun (sender, args) -> ratingBar.Rating <- 0 + ratingBar.Rating)
-                    member this.Include(act: Activity) = act.Title <- act.Title + ""
-
-                    member this.Include(changed: INotifyCollectionChanged) =
-                        changed.CollectionChanged.AddHandler<_>(fun (s, e) ->
-                            let mutable test = sprintf "%O%O%O%O" (e.Action) (e.NewItems) (e.NewStartingIndex) (e.OldItems)
-                            ())
-
-                    member this.Include(command: ICommand) =
-                        command.CanExecuteChanged.AddHandler<_>(fun (s, e) ->
-                            if command.CanExecute(null) then command.Execute(null))
-
-                    member this.Include(injector: MvvmCross.IoC.MvxPropertyInjector) =
-                        injector <- new MvvmCross.IoC.MvxPropertyInjector()
-
-                    member this.Include(changed: System.ComponentModel.INotifyPropertyChanged) =
-                        changed.PropertyChanged.AddHandler<_>(fun (sender, e) ->
-                            let mutable test = e.PropertyName
-                            ())
-
-                    member this.Include(context: MvxTaskBasedBindingContext) =
-                        context.Dispose()
-                        let mutable context2 = new MvxTaskBasedBindingContext()
-                        context2.Dispose()
-
-                    member this.Include(service: MvxNavigationService, loader: IMvxViewModelLoader) =
-                        service <- new MvxNavigationService(null, loader)
-
-                    member this.Include(color: ConsoleColor) =
-                        Console.Write("")
-                        Console.WriteLine("")
-                        color <- Console.ForegroundColor
-                        Console.ForegroundColor <- ConsoleColor.Red
-                        Console.ForegroundColor <- ConsoleColor.Yellow
-                        Console.ForegroundColor <- ConsoleColor.Magenta
-                        Console.ForegroundColor <- ConsoleColor.White
-                        Console.ForegroundColor <- ConsoleColor.Gray
-                        Console.ForegroundColor <- ConsoleColor.DarkGray
-
-                    member this.Include(plugin: MvvmCross.Plugin.Json.Plugin) = plugin.Load()""" 
-
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
-
-    [<Test>]
-    member this.``convert class with generic types`` () = 
-        let csharp = 
-             """public partial class TipView<T, Z> : MvxContentPage<TipViewModel>
-                {
-                    public TipView(string s, int i) : base(message)
-                    {
-                        InitializeComponent();
-                    }
-                }"""
-
-        let fsharp = 
-             """type TipView<'T, 'Z>(s: string, i: int) =
-                    inherit MvxContentPage<TipViewModel>(message)
-                    do InitializeComponent()"""
-
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
-
-    [<Test>]
-    member this.``convert class with interface beginning with I as interface`` () = 
-        let csharp = 
-             """public class Foo : IDisp
-                {
-                    public void Dispose()
-                    {
-                        FooBar();
-                    }
-                }"""
-
-        let fsharp = 
-             """type Foo() =
-                    member this.Dispose() = FooBar()
-                    interface IDisp with
-                        member this.Todo() = ()"""
-
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
-
-    [<Test>]
-    member this.``convert class with multiple interfaces`` () = 
-        let csharp = 
-             """public class Foo : IDisposable, IFoo
-                {
-                    public void Dispose()
-                    {
-                        FooBar();
-                    }
-                }"""
-
-        let fsharp = 
-             """type Foo() =
-                    member this.Dispose() = FooBar()
-
-                    interface IDisposable with
-                        member this.Todo() = ()
-
-                    interface IFoo with
-                        member this.Todo() = ()"""
-
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
@@ -1258,6 +808,30 @@ type TestClass () =
         |> should equal (formatFsharp fsharp)
 
     [<Test>]
+    member this.``convert try catch without named exception`` () = 
+        let csharp = 
+             """public void Main() {
+                    try {
+                       string str3 = myString.Substring(3, 1); // This throws ArgumentOutOfRangeException.
+                       Console.WriteLine(str3);
+                    }
+                    catch (ArgumentOutOfRangeException) {
+                       Console.WriteLine("Oops");
+                    }         
+                }"""
+    
+        let fsharp = 
+             """member this.Main() =
+                    try
+                        let mutable str3 = myString.Substring(3, 1)
+                        Console.WriteLine(str3)
+                    with :? ArgumentOutOfRangeException -> Console.WriteLine("Oops")"""
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
     member this.``convert using block`` () = 
         let csharp = 
              """public static byte[] ReadFully(Stream input)
@@ -1311,26 +885,26 @@ type TestClass () =
              """public class MembersJoined
                 {
 
-                public MembersJoined()
-                {
-                }
+                    public MembersJoined()
+                    {
+                    }
 
-                public MembersJoined(int day, string location, params string[] members)
-                {
-                    Day = day;
-                    Location = location;
-                    Members = members;
-                }
+                    public MembersJoined(int day, string location, params string[] members)
+                    {
+                        Day = day;
+                        Location = location;
+                        Members = members;
+                    }
 
-                public Guid QuestId { get; set; }
-                public int Day { get; set; }
-                public string Location { get; set; }
-                public string[] Members { get; set; }
-                public override string ToString()
-                {
-                    return $"Members {Members.Join(", ")} joined at {Location} on Day {Day}";
-                }
-            }"""
+                    public Guid QuestId { get; set; }
+                    public int Day { get; set; }
+                    public string Location { get; set; }
+                    public string[] Members { get; set; }
+                    public override string ToString()
+                    {
+                        return $"Members {Members.Join(", ")} joined at {Location} on Day {Day}";
+                    }
+                }"""
 
         let fsharp = 
              """type MembersJoined(day: int, location: string, [<ParamArray>] members: string []) =
@@ -1350,45 +924,7 @@ type TestClass () =
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
 
-    [<Test>]
-    member this.``parse mutliple classes`` () = 
-        let csharp = 
-             """public class QuestStarted
-                {
-                    public string Name { get; set; }
-                    public Guid Id { get; set; }
 
-                    public override string ToString()
-                    {
-                        return $"Quest {Name} started";
-                    }
-                }
-
-                public class QuestEnded
-                {
-                    public string Name { get; set; }
-                    public Guid Id { get; set; }
-
-                    public override string ToString()
-                    {
-                        return $"Quest {Name} ended";
-                    }
-                }"""
-    
-        let fsharp = 
-             """type QuestStarted() =
-                    member val Name: string = Unchecked.defaultof<string> with get, set
-                    member val Id: Guid = Unchecked.defaultof<Guid> with get, set
-                    member this.ToString(): string = sprintf "Quest %O started" (Name)
-
-                type QuestEnded() =
-                    member val Name: string = Unchecked.defaultof<string> with get, set
-                    member val Id: Guid = Unchecked.defaultof<Guid> with get, set
-                    member this.ToString(): string = sprintf "Quest %O ended" (Name)"""
-
-        csharp |> Converter.runWithConfig false 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
 
     [<Test>]
     member this.``incomplete recursive static method`` () = 
@@ -1426,70 +962,6 @@ type TestClass () =
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)  
 
-    [<Test>]
-    member this.``convert constructor and interface`` () = 
-        let csharp = 
-             """public class AppBootstrapper : ReactiveObject
-                {
-                    public RoutingState Router { get; protected set; }
-
-                    public AppBootstrapper()
-                    {
-                        Router = new RoutingState();
-                        Locator.CurrentMutable.RegisterConstant(this, typeof(IScreen));
-                        Locator.CurrentMutable.Register(() => new MainView(), typeof(IViewFor<MainViewModel>));
-                        Locator.CurrentMutable.Register(() => new SecondView(), typeof(IViewFor<SecondViewModel>));
-
-                        this
-                            .Router
-                            .NavigateAndReset
-                            .Execute(new MainViewModel())
-                            .Subscribe();
-                    }
-                }"""
-
-        let fsharp = 
-             """type AppBootstrapper() =
-                    inherit ReactiveObject()
-
-                    do
-                        Router <- new RoutingState()
-                        Locator.CurrentMutable.RegisterConstant(this, typeof<IScreen>)
-                        Locator.CurrentMutable.Register(fun () -> new MainView(), typeof<IViewFor<MainViewModel>>)
-                        Locator.CurrentMutable.Register(fun () -> new SecondView(), typeof<IViewFor<SecondViewModel>>)
-                        this.Router.NavigateAndReset.Execute(new MainViewModel()).Subscribe()
-
-                    member val Router: RoutingState = Unchecked.defaultof<RoutingState> with get, set"""
-
-        csharp |> Converter.runWithConfig false 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)  
-
-    [<Test>]
-    member this.``convert static class with constants`` () = 
-        let csharp = 
-             """namespace MedsProcessor.Common
-                {
-                    public static class Constants
-                    {
-                        public const string CURRENT_LISTS_URL = "http://www.hzzo.hr/zdravstveni-sustav-rh/trazilica-za-lijekove-s-vazecih-lista/";
-                        public const string ARCHIVE_LISTS_URL = "http://www.hzzo.hr/zdravstveni-sustav-rh/trazilica-za-lijekove-s-vazecih-lista/arhiva-liste-lijekova/";
-                        public const string DOWNLOAD_DIR = "";
-                    }
-                }"""
-
-        let fsharp = 
-             """namespace MedsProcessor.Common
-
-                type Constants() =
-                    let CURRENT_LISTS_URL = "http://www.hzzo.hr/zdravstveni-sustav-rh/trazilica-za-lijekove-s-vazecih-lista/"
-                    let ARCHIVE_LISTS_URL =
-                        "http://www.hzzo.hr/zdravstveni-sustav-rh/trazilica-za-lijekove-s-vazecih-lista/arhiva-liste-lijekova/"
-                    let DOWNLOAD_DIR = "" """
-
-        csharp |> Converter.runWithConfig false 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)  
 
     [<Test>]
     member this.``convert expression body with CoalesceExpression`` () = 
@@ -1547,3 +1019,34 @@ type TestClass () =
         csharp |> Converter.runWithConfig false 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)  
+
+    [<Test>]
+    member this.``match is converts to pattern match`` () = 
+        let csharp = 
+             """if (value is DateTime)
+                    writer.WriteValue(((DateTime)value)); 
+                else
+                    base.WriteJson(writer, value, serializer);
+                """
+
+        let fsharp = 
+             """if value :? DateTime then writer.WriteValue((value :?> DateTime))
+                else this.WriteJson(writer, value, serializer)"""
+
+        test <@ csharp |> Converter.run = formatFsharp fsharp @>
+
+    [<Test>]
+    member this.``method with override is converted to override method`` () = 
+        let csharp = 
+             """public override void Convert()
+                {
+                    FooBar();
+                }
+                """
+
+        let fsharp = 
+             """override Convert() = FooBar()"""
+
+        test <@ csharp |> Converter.run = formatFsharp fsharp @>
+
+ 

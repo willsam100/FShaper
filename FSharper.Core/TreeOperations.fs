@@ -18,6 +18,78 @@ module ExprOps =
     let toInfixApp left op right  = 
         toApp (Expr.App (ExprAtomicFlag.NonAtomic, true, op, left)) right
 
+module SynSimplePat = 
+
+    let getIdent simplePat = 
+        let rec loop simplePat = 
+            match simplePat with 
+            | SynSimplePat.Attrib (a,_,_) -> loop a
+            | SynSimplePat.Typed (a,_, _) -> loop a
+            | SynSimplePat.Id (a,_,_,_,_,_) -> a
+        loop simplePat  
+
+    let renameIdent func p = 
+        let rec loop p = 
+            match p with 
+            | SynSimplePat.Attrib (a, b, c) -> SynSimplePat.Attrib (loop a, b, c)
+            | SynSimplePat.Typed (a, b, c) -> SynSimplePat.Typed (loop a, b, c)
+            | SynSimplePat.Id (a,b,c,d,e,f) -> SynSimplePat.Id (func a,b,c,d,e,f)
+        loop p  
+
+module SynConst = 
+
+    let toIdent = function 
+        | SynConst.Unit -> Ident("Unit", range0)
+        | SynConst.Bool _ -> Ident("Bool", range0)
+        | SynConst.SByte _ -> Ident("SByte", range0)
+        | SynConst.Byte _ -> Ident("Byte", range0)
+        | SynConst.Int16 _ -> Ident("Int16", range0)
+        | SynConst.UInt16 _ -> Ident("UInt16", range0)
+        | SynConst.Int32 _ -> Ident("Int32", range0)
+        | SynConst.UInt32 _ -> Ident("UInt32", range0)
+        | SynConst.Int64 _ -> Ident("Int64", range0)
+        | SynConst.UInt64 _ -> Ident("UInt64", range0)
+        | SynConst.IntPtr _ -> Ident("IntPtr", range0)
+        | SynConst.UIntPtr _ -> Ident("UIntPtr", range0)
+        | SynConst.Single _ -> Ident("Single", range0)
+        | SynConst.Double _ -> Ident("Double", range0)
+        | SynConst.Char _ -> Ident("Char", range0)
+        | SynConst.Decimal _ -> Ident("Decimal", range0)
+        | SynConst.UserNum _ -> Ident("UserNum", range0)
+        | SynConst.String _ -> Ident("String", range0)
+        | SynConst.Bytes _ -> Ident("Bytes", range0)
+        | SynConst.UInt16s _ -> Ident("UInt16s", range0)
+        | SynConst.Measure _ -> Ident("Measure", range0)
+
+module SynPat = 
+
+    let getIdent synPat = 
+        let rec loop synPat = 
+            match synPat with 
+            | SynPat.Attrib (a,_,_) -> loop a
+            | SynPat.Typed (a,_, _) -> loop a
+            | SynPat.LongIdent (a,_,_,_,_,_) -> Expr.LongIdent (false, a)
+            | SynPat.Paren (a, _) -> loop a
+            | SynPat.Named (a,_,_,_,_) -> loop a // this is for parameters (foo = foobbar), ignore foo
+            // | SynPat.Const (a,_) -> 
+    //             let toLongIdentWithDots (s:string) = 
+    //         LongIdentWithDots (toIdent s, [range0])
+
+    // let toLongIdent (s:string) = 
+    //     Expr.LongIdent (false, toLongIdentWithDots s)
+            
+                    // SynConst.toIdent a
+            | x -> printfn "%A" x; sprintf "Wrong type: %A" x |> failwith
+        loop synPat  
+
+    let renameIdent func p = 
+        let rec loop p = 
+            match p with 
+            | SynPat.Attrib (a, b, c) -> SynPat.Attrib (loop a, b, c)
+            | SynPat.Typed (a, b, c) -> SynPat.Typed (loop a, b, c)
+            | SynPat.LongIdent (a,b,c,d,e,f) -> SynPat.LongIdent (func a,b,c,d,e,f)
+        loop p                 
+
 [<AutoOpen>]
 module ParserUtil = 
 
