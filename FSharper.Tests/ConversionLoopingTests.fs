@@ -27,6 +27,22 @@ type LoopngTests () =
                 }"""
 
         let fsharp = 
+             """for n = 0 to 9 do
+                    Console.WriteLine(sprintf "%O" (n))"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``standard incrementing for loop i, i <= i++`` () = 
+        let csharp = 
+             """for (int n = 0; n <= 10; n++) 
+                {
+                    Console.WriteLine($"{n}");
+                }"""
+
+        let fsharp = 
              """for n = 0 to 10 do
                     Console.WriteLine(sprintf "%O" (n))"""
                    
@@ -70,7 +86,7 @@ type LoopngTests () =
                     let mutable c = Array.zeroCreate<int64> (100)
                     i <- 1
                     c.[i] <- 1L
-                    for i = 1 to n do
+                    for i = 1 to (n - 1) do
                         Console.WriteLine(sprintf "%O" (i))
                         c.[0] <- -c.[0]"""
                    
@@ -100,7 +116,7 @@ type LoopngTests () =
                     else
                         i <- 0
                         c.[i] <- 1L
-                        for i = 0 to n do
+                        for i = 0 to (n - 1) do
                             j <- i
                             c.[1 + j] <- 1L
                             for j = i downto 1 do
@@ -204,8 +220,28 @@ type LoopngTests () =
 
         let fsharp = 
              """member this.Foo() =
-                    for i = 0 to word.Length do
+                    for i = 0 to (word.Length - 1) do
                         Console.WriteLine(sprintf "%O" (i))"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``for loop with <= in loop`` () = 
+        let csharp = 
+             """void Foo() 
+                {
+                    for(int i = 1; i <= word.Length; ++i)
+                    {
+                        Console.WriteLine($"{i - 1}");
+                    }
+                }"""
+
+        let fsharp = 
+             """member this.Foo() =
+                    for i = 1 to word.Length do
+                        Console.WriteLine(sprintf "%O" (i - 1))"""
                    
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)

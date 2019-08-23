@@ -7,6 +7,62 @@ open Microsoft.FSharp.Compiler.SourceCodeServices.Structure
 open Microsoft.FSharp.Compiler.SourceCodeServices 
 open Fantomas
 
+module List = 
+
+    let permuteWithOrder a = 
+        let size = List.length a
+        let rec loop acc int = 
+            if int < 0 then acc 
+            else 
+                let result = 
+                    [0 .. (size - 1)] 
+                    |> List.map (fun x -> (x, x + int))
+                    |> List.filter (fun (start, e) -> e < size)
+                    |> List.map (fun (s,e) -> a.[s .. e])
+                loop (result @ acc) (int - 1)  
+        loop [] size   
+
+    let tailSafe = function | [] -> [] | _::xs -> xs
+
+    let rec zipAnyLength lists = 
+        let rec loop acc lists = 
+            match lists |> List.filter (List.isEmpty >> not) with 
+            | [] -> acc
+            | lists -> 
+                let xs = 
+                    lists 
+                    |> List.map List.tryHead 
+                    |> List.choose id 
+                    |> List.distinct
+                loop 
+                    (xs :: acc) // don't distinct here as the order is incorrect
+                    (lists |> List.map tailSafe)
+        loop [] lists 
+        |> List.rev |> List.concat // preserve the order 
+
+// Directed acyclic graph
+module DAG = 
+    let successors n edges =
+        edges |> List.filter (fun (s,_) -> s = n) |> List.map snd 
+
+    let toplogicalSort edges seed =
+        let rec sort path visited = function
+            | [] -> visited
+            | n::nodes ->
+                printfn "%A %A %A" n path visited
+                if List.exists (fun x -> x = n) path then 
+                    [] 
+                else
+                    let v' = 
+                        if List.exists (fun x -> x = n) visited then 
+                            visited 
+                        else
+                            n :: sort (n::path) visited (successors n edges)
+                    sort path v' nodes
+
+        sort [] [] [seed]
+
+
 [<AutoOpen>]
 type CompExpr = Seq | Async 
 
@@ -593,6 +649,65 @@ module TreeOps =
             | Expr.Paren (Expr.Tuple []) -> Expr.Const SynConst.Unit |> Some
             | Expr.Tuple [] -> Expr.Const SynConst.Unit |> Some
             | _ -> None)
+        
+    // This is a work in progress. It only orders by count of depencies that are known from the code supplied. 
+    // This should be good enough, but will not work 
+    // when d -> c, c -> b, b -> a the final order of b,c,d is non-derterminstic. a will be first. 
+    let reorderStructures s =
+
+        let getName = function 
+            | C c -> c.Name.Name
+            | Interface (name, _) -> name.idText
+
+        let names = s |> List.map getName
+        let mapping = s |> List.map (fun x -> getName x, x) |> Map.ofList
+
+        let getDependencies = function 
+            | C c -> 
+                [
+                    yield! (c.BaseClass |> Option.map SynType.getName) |> Option.toList
+                    yield! c.Fields |> List.map (fun x -> SynType.getName x.Type)
+                    yield! c.Properties |> List.map (fun x -> SynType.getName x.Type)
+                    yield! c.Methods |> List.collect (fun x -> 
+                        SynType.getName x.ReturnType :: 
+                            (x.Parameters |> List.choose (SynPat.getType >> Option.map SynType.getName)) )
+                    yield! c.ImplementInterfaces |> List.map SynType.getName
+                    yield! c.Constructors |> List.collect (fun x -> x.Body |> List.collect getNames)
+                    yield! c.Methods |> List.collect (fun x -> getNames x.Body)
+                    yield! c.Properties |> List.choose (fun x -> 
+                        x.Get |> Option.map (getNames)) |> List.concat
+                ]   
+            | Interface (_, methods) -> 
+                methods |> List.collect (fun (Method (_, types)) -> types |> List.map SynType.getName)
+
+        let dependencyCount = getDependencies >> List.filter (fun x -> names |> List.contains x)
+  
+        let filterDependencyPermutations lists = 
+            if List.isEmpty lists then [] 
+            else
+                let longestOrderedPermutations = 
+                    let longest = lists |> List.maxBy List.length
+                    longest 
+                    |> List.permuteWithOrder 
+                    |> List.filter (fun x -> x <> longest)
+
+                lists |> List.filter (fun x -> longestOrderedPermutations |> List.contains x |> not)
+            
+        let dependencyOrder = 
+            let graph = s |> List.collect (fun x -> dependencyCount x |> List.map (fun d -> getName x, d))
+
+            s
+            |> List.map (getName >> DAG.toplogicalSort graph >> List.rev)
+            |> filterDependencyPermutations  
+            |> List.zipAnyLength 
+
+        let noDeps = 
+            s 
+            |> List.map (fun x -> x |> dependencyCount |> List.length, getName x)
+            |> List.filter (fun (a,b) -> a = 0)
+            |> List.map snd
+        
+        (noDeps @ dependencyOrder) |> List.distinct |> List.choose (fun x -> Map.tryFind x mapping )
 
     let rewriteActionOrFuncToUseCallInvoke tree = 
 

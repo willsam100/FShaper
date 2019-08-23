@@ -203,7 +203,27 @@ type ClassTests () =
         let fsharp = 
              """type Foo() =
                     inherit IsoDate()
-                    member this.Convert() = FooBar()"""
+                    override this.Convert() = FooBar()"""
+
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``convert class with call to base method`` () = 
+        let csharp = 
+             """public class Foo : IsoDate
+                {
+                    public override void Convert()
+                    {
+                        base.ConvertBase();
+                    }
+                }"""
+
+        let fsharp = 
+             """type Foo() =
+                    inherit IsoDate()
+                    override this.Convert() = base.ConvertBase()"""
 
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
@@ -212,7 +232,7 @@ type ClassTests () =
     [<Test>]
     member this.``convert class with subclass and interface`` () = 
         let csharp = 
-             """public class Foo : IsoDate, IDispose
+             """public class Foo : IsoDate, IDisposable
                 {
                     public override void Convert()
                     {
@@ -228,9 +248,10 @@ type ClassTests () =
         let fsharp = 
              """type Foo() =
                     inherit IsoDate()
-                    member this.Convert() = FooBar()
-                    interface IDispose with
-                        member this.Todo() = ()"""
+                    override this.Convert() = FooBar()
+                    member this.Dispose() = Clear()
+                    interface IDisposable with
+                        member this.Dispose() = this.Dispose()"""
 
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
@@ -327,10 +348,10 @@ type ClassTests () =
              """namespace MedsProcessor.Common
 
                 type Constants() =
-                    let CURRENT_LISTS_URL = "http://www.hzzo.hr/zdravstveni-sustav-rh/trazilica-za-lijekove-s-vazecih-lista/"
-                    let ARCHIVE_LISTS_URL =
+                    member this.CURRENT_LISTS_URL = "http://www.hzzo.hr/zdravstveni-sustav-rh/trazilica-za-lijekove-s-vazecih-lista/"
+                    member this.ARCHIVE_LISTS_URL =
                         "http://www.hzzo.hr/zdravstveni-sustav-rh/trazilica-za-lijekove-s-vazecih-lista/arhiva-liste-lijekova/"
-                    let DOWNLOAD_DIR = "" """
+                    member this.DOWNLOAD_DIR = "" """
 
         csharp |> Converter.runWithConfig false 
         |> (fun x -> printfn "%s" x; x)
@@ -394,6 +415,101 @@ type ClassTests () =
                     do 
                         Foo()
                         _bar <- "42" """
+
+        test <@ 
+                    csharp |> Converter.runWithConfig false
+                    |> (fun x -> x.Split '\n' |> Array.toList)
+                    |> List.map (fun x -> x.Trim())
+                        = 
+                        (fsharp 
+                            |> formatFsharp 
+                            |> (fun x -> x.Split '\n' |> Array.toList) 
+                            |> List.map (fun x -> x.Trim())) @> 
+
+    [<Test>] 
+    member this.``convert inner class`` () = 
+        let csharp = 
+             """public class FooBar
+            	{
+            		public void Foo()
+            		{
+            			var x = new InternalBar();
+                        x.Baz();
+            		}
+
+                    class InternalBar
+                    {
+                        public void Baz() 
+                        {
+
+                        }
+                    }
+              	}"""
+
+        let fsharp = 
+             """type InternalBar() = 
+                    member this.Baz() = ()
+                    
+                type FooBar() = 
+                    member this.Foo() = 
+                        let mutable x = new InternalBar()
+                        x.Baz()"""
+
+        test <@ 
+                    csharp |> Converter.runWithConfig false
+                    |> (fun x -> x.Split '\n' |> Array.toList)
+                    |> List.map (fun x -> x.Trim())
+                        = 
+                        (fsharp 
+                            |> formatFsharp 
+                            |> (fun x -> x.Split '\n' |> Array.toList) 
+                            |> List.map (fun x -> x.Trim())) @> 
+
+    [<Test>] 
+    member this.``convert public field to public property`` () = 
+        let csharp = 
+             """public class FooBar
+            	{
+                    public Object bar;
+            		public FooBar(Object o)
+            		{
+            			this.bar = o;
+            		}
+              	}"""
+
+        let fsharp = 
+             """type FooBar(o: obj) = 
+                    do this.bar <- o
+                    member val bar: obj = Unchecked.defaultof<obj> with get, set"""
+
+        test <@ 
+                    csharp |> Converter.runWithConfig false
+                    |> (fun x -> x.Split '\n' |> Array.toList)
+                    |> List.map (fun x -> x.Trim())
+                        = 
+                        (fsharp 
+                            |> formatFsharp 
+                            |> (fun x -> x.Split '\n' |> Array.toList) 
+                            |> List.map (fun x -> x.Trim())) @> 
+
+    [<Test>] 
+    member this.``convert public fields to F# properties`` () = 
+        let csharp = 
+             """class Entry
+                {
+                    public object data;
+                    public Entry next;
+                    public Entry(Entry next, object data)
+                    {
+                        this.next = next;
+                        this.data = data;
+                    }
+                }"""
+
+        let fsharp = 
+             """type Entry(next: Entry, data: obj) =
+                    member this.data = data
+                    member this.next = next"""
 
         test <@ 
                     csharp |> Converter.runWithConfig false

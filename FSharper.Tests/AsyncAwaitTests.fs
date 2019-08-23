@@ -97,7 +97,7 @@ type AsyncAwaitTests () =
                         $"Done! Handler duration: {totalTime.Duration()}" +
                         Environment.NewLine +
                         Environment.NewLine +
-                        string.Join(Environment.NewLine, meds.Select(x => x.FileName))
+                        String.Join(Environment.NewLine, meds.Select(x => x.FileName))
                     );
                 }"""
     
@@ -109,10 +109,37 @@ type AsyncAwaitTests () =
                         let mutable totalTime = startTime - DateTime.Now
                         return Ok
                                    (sprintf "Done! Handler duration: %O" (totalTime.Duration()) + Environment.NewLine
-                                    + Environment.NewLine + TypeSyntax.Join(Environment.NewLine, meds.Select(fun x -> x.FileName)))
+                                    + Environment.NewLine + String.Join(Environment.NewLine, meds.Select(fun x -> x.FileName)))
                     }
                     |> Async.StartAsTask"""
                    
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
+
+
+    // [<Test>]
+    // member this.``return keyword is added with if statement`` () = 
+    //     let csharp = 
+    //          """public async Task<ActionResult<TodoItem>> GetTodoItem(long id)
+    //             {
+    //                 var todoItem = await _context.TodoItems.FindAsync(id);
+
+    //                 if (todoItem == null)
+    //                 {
+    //                     return NotFound();
+    //                 }
+
+    //                 return todoItem;
+    //             }"""
+    
+    //     let fsharp = 
+    //          """member this.GetTodoItem(id: int64): : Task<ActionResult<TodoItem>> = 
+    //                 async {
+    //                     let! todoItem = _context.TodoItems.FindAsync(id) |> Async.AwaitTask
+    //                     return if todoItem = null then NotFound() else todoItem
+    //                 } |> Async.StartAsTask"""
+                   
+    //     csharp |> Converter.run 
+    //     |> (fun x -> printfn "%s" x; x)
+    //     |> should equal (formatFsharp fsharp)

@@ -394,38 +394,27 @@ type Class = {
     }
 
 type InferfaceMethod = Method of name:Ident * parameters:SynType list
-type Interface = {
-    Name: Ident
-    Methods:InferfaceMethod list
-}
 
 type UsingStatement = {
     UsingNamespace:string
 }
 
+type Structure = 
+    | Interface of name:Ident * methods:InferfaceMethod list
+    | C of Class
+
 type Namespace = {
     Name:string
-    Interfaces: Interface list
-    Classes: Class list
+    Structures: Structure list
 }
 
 type File = 
     | FileWithUsingNamespace of usingStatement:UsingStatement list * namespaces: Namespace list
-    | FileWithUsingNamespaceAndDefault of usingStatement:UsingStatement list * namespaces: Namespace list * interfaces: Interface list * classes:Class list
-    | FileWithUsing of usingStatement:UsingStatement list * interfaces: Interface list * classes:Class list
-
-//type File = {
-//    UsingStatements:UsingStatement list
-//    Namespaces:Namespace list
-//}
+    | FileWithUsingNamespaceAndDefault of usingStatement:UsingStatement list * namespaces: Namespace list * structures:Structure list
+    | FileWithUsing of usingStatement:UsingStatement list * structures:Structure list
 
 type FsharpSyntax = 
     | File of File
     | UsingStatement of UsingStatement
     | Namespace of Namespace
-    | Interface of Interface
-    | Class of Class
-    //| Field of Field seq
-    //| Prop of Prop
-    //| Method of Method
-    //| Empty
+    | Structures of Structure list

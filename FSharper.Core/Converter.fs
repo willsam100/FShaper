@@ -107,9 +107,6 @@ module FormatOuput =
             match x.ReturnType with 
             | SynType.LongIdent (x) when joinLongIdentWithDots x = "unit" -> t
             | _ ->  Expr.Typed (t, x.ReturnType)
-            
-        printfn "Transformed Tree:"
-        printfn "%A" trandformedTree
 
         let returnType = SynBindingReturnInfo.SynBindingReturnInfo (x.ReturnType, range0, [])
 
@@ -255,9 +252,9 @@ module FormatOuput =
                     toSynExpr init, range0 , SequencePointAtBinding range0)
         SynMemberDefn.LetBindings ([binding], x.IsStatic, false, range0)
 
-    let toInterface (cn:Interface) =    
+    let toInterface (name, methods) =    
         let types = 
-            cn.Methods |> List.map (fun (InferfaceMethod.Method (name, parameters)) -> 
+            methods |> List.map (fun (InferfaceMethod.Method (name, parameters)) -> 
                 let parameters = parameters |> List.reduce (fun a b -> SynType.Fun (a, b, range0))
                 let valsfn = 
                     ValSpfn ([], name, SynValTyparDecls ([], true, []),
@@ -274,7 +271,7 @@ module FormatOuput =
                           IsFinal = false;
                           MemberKind = MemberKind.Member;}, range0) )
 
-        let info = ComponentInfo ([], [], [], [cn.Name], PreXmlDocEmpty, false, None, range0)
+        let info = ComponentInfo ([], [], [], [name], PreXmlDocEmpty, false, None, range0)
         let model = SynTypeDefnRepr.ObjectModel (TyconUnspecified,types,range0)
         TypeDefn (info, model, [], range0) 
 
@@ -331,7 +328,7 @@ module FormatOuput =
             cn.ImplementInterfaces 
             |> List.map (fun x -> 
                 let (name, expr, interfaceParameters) = 
-                    match cn.Methods with 
+                    match cn.Methods |> List.filter (fun x -> not x.IsOverride && not x.IsStatic) with 
                     | [x] -> 
                         let args = x.Parameters |> List.map SynPat.getIdent |> Expr.Tuple
                         let invoke = sprintf "this.%s" x.Name |> toLongIdent
@@ -391,9 +388,9 @@ module FormatOuput =
             | Some x -> [ctor; x]
             | None -> [ctor]
 
-        let (ctors, fields, ctorInit) = 
+        let (ctors, fields, ctorInit, properties) = 
             match mainCtor with
-            | None -> ctors, fields, [] 
+            | None -> ctors, fields, [], properties
             | Some mainCtor ->  
                 // let body = mainCtor.Body
                 // printfn "%d" mainCtor.Body.Length
@@ -464,9 +461,50 @@ module FormatOuput =
                                     | _ -> true )
                         | _ -> true ) 
 
+                let properties = 
+
+                    let names = 
+                        removedFields 
+                        |> List.map (function | Choice1Of2 x -> x | Choice2Of2 x -> x |> fst)
+
+                    let isNameMatch fieldIdent = 
+                        names |> List.exists (fun x -> x.Contains fieldIdent)
+
+                    properties
+                    |> List.map (fun x -> 
+                        match x with 
+                        | SynMemberDefn.AutoProperty (a,b,name,d,e,f,g,h,i,j,k) when isNameMatch name.idText -> 
+                                let getter = toLongIdent name.idText
+                            
+                                let memberOptions = 
+                                    {   
+                                        IsInstance = true
+                                        IsDispatchSlot = false
+                                        IsOverrideOrExplicitImpl = false
+                                        IsFinal = false
+                                        MemberKind = MemberKind.PropertyGet }
+
+                                let synVaInfo = 
+                                    SynValInfo
+                                        ([[SynArgInfo ([],false,None)]; []],SynArgInfo ([],false,None))
+                                             
+                                let headPat = 
+                                    SynPat.LongIdent
+                                        (sprintf "this.%s" name.idText |> toLongIdentWithDots, toSingleIdent "get" |> Some, None, 
+                                                SynConstructorArgs.Pats (
+                                                    [SynPat.Paren (SynPat.Const (SynConst.Unit, range0), range0  )]),
+                                                    None, range0)
+
+                                SynMemberDefn.Member (
+                                    SynBinding.Binding
+                                        (None, NormalBinding, false, false, [], 
+                                            PreXmlDocEmpty, SynValData (Some memberOptions, synVaInfo, None), headPat, None, getter |> toSynExpr, range0, NoSequencePointAtInvisibleBinding), range0)   
+
+                        | x -> x) 
+
                 let expr = body |> sequential |> toSynExpr
                 match expr with
-                | SynExpr.Const (SynConst.Unit, _) -> ctors, fields, [] // `do ()` means nothings
+                | SynExpr.Const (SynConst.Unit, _) -> ctors, fields, [], properties // `do ()` means nothings
                 | _ -> 
                     let ctorInit = 
                         SynMemberDefn.LetBindings([
@@ -474,81 +512,62 @@ module FormatOuput =
                                 SynValData (None,SynValInfo ([],SynArgInfo ([],false,None)),None), SynPat.Const (SynConst.Unit, range0),
                                 None, expr, range0, SequencePointInfoForBinding.NoSequencePointAtDoBinding)
                             ], false, false, range0) |> List.singleton
-                    ctors, fields, ctorInit                        
+                    ctors, fields, ctorInit, properties                      
 
         SynTypeDefn.TypeDefn (x, SynTypeDefnRepr.ObjectModel (TyconUnspecified, ctors @ fields @ ctorInit @ properties @ methods @ interfaces, range0), [], range0)
         |> List.singleton
         |> (fun x -> SynModuleDecl.Types (x, range0))
 
-let toFsharpSynaxTree input = 
+    let parseStructure = function
+        | C c -> toClass c
+        | Interface (name, methods) -> (name,methods) |> toInterface |> (fun xs -> SynModuleDecl.Types ([xs], range0)) 
 
-    let parseInterfaces = 
-        List.map FormatOuput.toInterface >> (fun xs -> 
-            match xs with 
-            | [] -> [] 
-            | _ -> SynModuleDecl.Types (xs, range0) |> List.singleton)
+let toFsharpSynaxTree input =
 
+    let processStructures s = 
+        s 
+        |> TreeOps.reorderStructures
+        |> List.map FormatOuput.parseStructure
+
+    let toNamespace ns mods decls = FormatOuput.toNamespace ns (mods @ decls)
+    let processNamespaces usings ns = 
+        let mods = usings |> List.map FormatOuput.createOpenStatements
+        ns |> List.map (fun ns -> ns.Structures |> processStructures |> toNamespace ns mods) |> FormatOuput.toFile
+        
     match input with 
     | File f -> 
 
-        let defaultNamespace = {Name = DefaultNames.namespaceName; Interfaces = []; Classes = [] }
-
-
+        let defaultNamespace = {Name = DefaultNames.namespaceName; Structures = []}
         match f with 
-        | FileWithUsing (usings, interfaces, classes) -> 
-            let ns = {defaultNamespace with Interfaces = interfaces; Classes = classes }
-            let mods = usings |> List.map FormatOuput.createOpenStatements
-            let namespaces = 
-                let classes = ns.Classes |> List.map FormatOuput.toClass
-                let interfaces = ns.Interfaces |> parseInterfaces
-                [FormatOuput.toNamespace ns (mods @ interfaces @ classes)]
-            FormatOuput.toFile namespaces
+        | FileWithUsing (usings, structures) -> 
+            [{defaultNamespace with Structures = structures}] 
+            |> processNamespaces usings
 
-        | FileWithUsingNamespace (usngs, namespaces) -> 
-            let mods = usngs |> List.map FormatOuput.createOpenStatements 
+        | FileWithUsingNamespace (usings, namespaces) -> 
             let ns = 
                 match namespaces with 
                 | [] -> [defaultNamespace]
                 | xs -> xs 
+            processNamespaces usings ns 
 
-            let namespaces = 
-                ns |> List.map (fun x -> 
-                    let classes = 
-                        x.Classes |> List.map FormatOuput.toClass
-                    let interfaces = x.Interfaces |> parseInterfaces
-                    FormatOuput.toNamespace x (mods @ interfaces @ classes) )
-            FormatOuput.toFile namespaces
-
-        | FileWithUsingNamespaceAndDefault (usings, namespaces, interfaces, classes) -> 
-            let mods = usings |> List.map FormatOuput.createOpenStatements 
+        | FileWithUsingNamespaceAndDefault (usings, namespaces, s) -> 
             let ns = 
-                match namespaces, interfaces, classes with 
-                | [], [], [] -> [defaultNamespace]
-                | [], interfaces, classes -> [{defaultNamespace with Interfaces = interfaces; Classes = classes }]
-                | ns, [], [] -> ns
-                | ns, interfaces, [] -> {defaultNamespace with Interfaces = interfaces } :: ns
-                | ns, [], classes -> {defaultNamespace with Classes = classes } :: ns
-                | ns, interfaces, classes -> {defaultNamespace with Interfaces = interfaces; Classes = classes } :: ns
-
-            let namespaces = 
-                ns |> List.map (fun x -> 
-                    let classes = 
-                        x.Classes |> List.map FormatOuput.toClass
-                    let interfaces = x.Interfaces |> parseInterfaces
-                    FormatOuput.toNamespace x (mods @ interfaces @ classes) )
-            FormatOuput.toFile namespaces
-
+                match namespaces, s with 
+                | [], [] -> [defaultNamespace]
+                | [], s -> [{defaultNamespace with Structures = s}]
+                | ns, [] -> ns
+                | ns, s -> {defaultNamespace with Structures = s } :: ns
+            processNamespaces usings ns 
 
     | UsingStatement us -> 
-        let ns = {Name = DefaultNames.namespaceName; Interfaces = []; Classes = [] }           
+        let ns = {Name = DefaultNames.namespaceName; Structures = [] }           
         FormatOuput.toNamespace ns [FormatOuput.createOpenStatements us] |> List.singleton |> FormatOuput.toFile
 
     | Namespace ns -> 
-        let classes = ns.Classes |> List.map FormatOuput.toClass
-        let interfaces = ns.Interfaces |> parseInterfaces
-        FormatOuput.toNamespace ns (interfaces @ classes) |> List.singleton |> FormatOuput.toFile
+        let decls = ns.Structures |> processStructures
+        FormatOuput.toNamespace ns decls |> List.singleton |> FormatOuput.toFile
         
-    | Class cn ->  cn  |> FormatOuput.toClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
+    | Structures s ->  s  |> processStructures |> FormatOuput.defaultModule |> FormatOuput.toFile
     //| Method m ->  m |> FormatOuput.toMethod [m.Name] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
     //| FSharper.Core.Field f ->  f |> Seq.head |> FormatOuput.inMethod |> FormatOuput.toMethod [] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
 

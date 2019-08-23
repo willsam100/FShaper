@@ -18,6 +18,13 @@ module ExprOps =
     let toInfixApp left op right  = 
         toApp (Expr.App (ExprAtomicFlag.NonAtomic, true, op, left)) right
 
+    let sequentialToList sequential = 
+        let rec loop acc s = 
+            match s with 
+            | Expr.Sequential (_, _, c, d) -> loop [] d @ loop [] c @ acc // NB: building the list backwards
+            | x -> [x]
+        loop [] sequential  |> List.rev    
+
 module SynSimplePat = 
 
     let getIdent simplePat = 
@@ -71,14 +78,17 @@ module SynPat =
             | SynPat.LongIdent (a,_,_,_,_,_) -> Expr.LongIdent (false, a)
             | SynPat.Paren (a, _) -> loop a
             | SynPat.Named (a,_,_,_,_) -> loop a // this is for parameters (foo = foobbar), ignore foo
-            // | SynPat.Const (a,_) -> 
-    //             let toLongIdentWithDots (s:string) = 
-    //         LongIdentWithDots (toIdent s, [range0])
+            | x -> printfn "%A" x; sprintf "Wrong type: %A" x |> failwith
+        loop synPat  
 
-    // let toLongIdent (s:string) = 
-    //     Expr.LongIdent (false, toLongIdentWithDots s)
-            
-                    // SynConst.toIdent a
+    let getType synPat = 
+        let rec loop synPat = 
+            match synPat with 
+            | SynPat.Attrib (a,_,_) -> loop a
+            | SynPat.Typed (a, b, c) -> Some b
+            | SynPat.LongIdent (a,_,_,_,_,_) -> None
+            | SynPat.Paren (a, _) -> loop a
+            | SynPat.Named (a,_,_,_,_) -> loop a // this is for parameters (foo = foobbar), ignore foo
             | x -> printfn "%A" x; sprintf "Wrong type: %A" x |> failwith
         loop synPat  
 
@@ -88,7 +98,8 @@ module SynPat =
             | SynPat.Attrib (a, b, c) -> SynPat.Attrib (loop a, b, c)
             | SynPat.Typed (a, b, c) -> SynPat.Typed (loop a, b, c)
             | SynPat.LongIdent (a,b,c,d,e,f) -> SynPat.LongIdent (func a,b,c,d,e,f)
-        loop p                 
+        loop p       
+
 
 [<AutoOpen>]
 module ParserUtil = 
@@ -124,6 +135,7 @@ module ParserUtil =
             | Expr.DoBang e -> e |> replaceExpr |> Expr.DoBang
             | Expr.CompExpr (a,b,c) -> Expr.CompExpr (a,b, replaceExpr c)
             | Expr.LetOrUseBang (a,b,c,d,e,f) -> Expr.LetOrUseBang (a,b,c,d, replaceExpr e,replaceExpr f)
+            | Expr.New (a,b,c) -> Expr.New (a,b, replaceExpr c)
             | e -> e
 
     let rec getFirstExpr f tree = 
@@ -149,6 +161,7 @@ module ParserUtil =
             | Expr.YieldOrReturn (a, b) -> getFirstExpr b
             | Expr.DoBang e -> getFirstExpr e
             | Expr.CompExpr (a,b,c) -> getFirstExpr c
+            | Expr.New (a,b,c) -> getFirstExpr c
             | e -> None
 
     let rec containsExpr f tree = 
@@ -161,7 +174,8 @@ module ParserUtil =
         | Expr.DotSet (a,b,c) -> containsExpr a @ containsExpr c
         | Expr.DotGet (e, _) -> containsExpr e
         | Expr.IfThenElse (a,b,c,d,e) -> (containsExpr a) @ (containsExpr b)
-        | Expr.LetOrUse (x,y,z,i) -> containsExpr i
+        | Expr.LetOrUse (x,y,z,i) -> 
+            (containsExpr i) @ (z |> List.collect (fun (LetBind (a,b,c,d,e,f,g,h)) -> containsExpr h))
         | Expr.LetOrUseBang (a,b,c,d,e,f) -> containsExpr e @ containsExpr f
         | Expr.App (a,b,c,d) ->  containsExpr c @ containsExpr d
         | Expr.ForEach (a,b,c,d,e,f) -> containsExpr e @ containsExpr f
@@ -174,6 +188,7 @@ module ParserUtil =
         | Expr.YieldOrReturn (a, b) -> containsExpr b
         | Expr.DoBang e -> containsExpr e
         | Expr.CompExpr (a,b,c) -> containsExpr c
+        | Expr.New (a,b,c) -> containsExpr c
         | _ -> []
 
     let replaceAnyPostOrPreIncrement =
@@ -183,9 +198,10 @@ module ParserUtil =
                 | Expr.Sequential(a,b, expr, Expr.LongIdentSet (c,d)) -> Expr.LongIdentSet (c,d) |> Some
                 | _ -> None)
 
-    let fixKeywords k = 
+    let fixKeywords (k:string) = 
         match k with 
         | "object" -> "obj"
+        | "Object" -> "obj"
         | "long" -> "int64"
         | "IEnumerable" -> "seq"
         | "void" -> "unit"
@@ -374,8 +390,7 @@ module ParserUtil =
             | FindIdent x, FindIdent y -> Some (x @ y)
             | FindIdent a,  _ -> Some a
             | _, FindIdent a  -> Some a
-            | _ -> None
-
+            | _ -> None        
         | e -> printfn "Name: %A" e; None
 
     let identSetToIdentGet = function
@@ -384,3 +399,26 @@ module ParserUtil =
         | Expr.Sequential (SequencePointsAtSeq, false, Expr.LongIdentSet (var, expr), Expr.DotIndexedSet(e, [IndexerArg.One (x)], Expr.InLetPlaceholder)) -> 
             Expr.DotIndexedGet(e, [IndexerArg.One (x)])
         | e -> e
+
+    let getNames expr = 
+        expr 
+        |> containsExpr (function 
+            | Expr.LongIdent (a,b) -> true
+            | Expr.Ident _ -> true
+            | Expr.New (a,b,c) -> true
+            | _ -> false ) 
+        |> List.collect (fun x -> 
+            match x with 
+            | Expr.New (a,b,c) -> 
+                match b with 
+                | SynType.LongIdent a -> [joinLongIdentWithDots a]
+                | _ -> []
+            | _ -> [])        
+
+module SynType = 
+    let rec getName = function 
+        | SynType.LongIdent l -> l |> joinLongIdentWithDots
+        | SynType.Array (a,b,c) -> getName b + "[]"
+        | x ->
+            printfn "SynType not matched: %A" x 
+            ""

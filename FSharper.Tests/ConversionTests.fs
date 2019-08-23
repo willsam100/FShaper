@@ -918,7 +918,7 @@ type ConversionTests () =
                     member val Day: int = Unchecked.defaultof<int> with get, set
                     member val Location: string = Unchecked.defaultof<string> with get, set
                     member val Members: string [] = Unchecked.defaultof<string []> with get, set
-                    member this.ToString(): string = sprintf "Members %O joined at %O on Day %O" (Members.Join(", ")) (Location) (Day)"""
+                    override this.ToString(): string = sprintf "Members %O joined at %O on Day %O" (Members.Join(", ")) (Location) (Day)"""
 
         csharp |> Converter.runWithConfig false 
         |> (fun x -> printfn "%s" x; x)
@@ -999,6 +999,21 @@ type ConversionTests () =
         |> should equal (formatFsharp fsharp)
 
     [<Test>]
+    member this.``convert throw exception`` () = 
+        let csharp = 
+             """public void ThrowException()
+                {
+                    throw new NullReferenceException();                    
+                }"""
+
+        let fsharp = 
+             """member this.ThrowException() = raise new NullReferenceException()"""
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+    [<Test>]
     member this.``convert generic types in method`` () = 
         let csharp = 
              """public void ConfigureServices(IServiceCollection services)
@@ -1031,7 +1046,7 @@ type ConversionTests () =
 
         let fsharp = 
              """if value :? DateTime then writer.WriteValue((value :?> DateTime))
-                else this.WriteJson(writer, value, serializer)"""
+                else base.WriteJson(writer, value, serializer)"""
 
         test <@ csharp |> Converter.run = formatFsharp fsharp @>
 
@@ -1045,8 +1060,48 @@ type ConversionTests () =
                 """
 
         let fsharp = 
-             """override Convert() = FooBar()"""
+             """override this.Convert() = FooBar()"""
 
         test <@ csharp |> Converter.run = formatFsharp fsharp @>
 
- 
+    [<Test>]
+    member this.``parse class object initlization`` () = 
+        let csharp = 
+             """public static void SetupJsonSettings()
+                {
+                    var jsonSerializerSettings = new JsonSerializerSettings
+                    {
+                        ContractResolver = new CamelCasePropertyNamesContractResolver(),
+                        DateFormatHandling = DateFormatHandling.IsoDateFormat,
+                        DateTimeZoneHandling = DateTimeZoneHandling.Utc
+                    };
+
+                    jsonSerializerSettings.Converters.Add(new JsonDateConverter());
+
+                    JsonConvert.DefaultSettings = () => jsonSerializerSettings;
+                }"""
+    
+        let fsharp = 
+             """static member SetupJsonSettings() =
+                    let mutable jsonSerializerSettings =
+                        new JsonSerializerSettings(ContractResolver = new CamelCasePropertyNamesContractResolver(),
+                                                   DateFormatHandling = DateFormatHandling.IsoDateFormat,
+                                                   DateTimeZoneHandling = DateTimeZoneHandling.Utc)
+                    jsonSerializerSettings.Converters.Add(new JsonDateConverter())
+                    JsonConvert.DefaultSettings <- fun () -> jsonSerializerSettings"""
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)  
+
+    [<Test>]
+    member this.``list initlization`` () = 
+        let csharp = 
+             """List<int> ListGeneric = new List<int> { 5, 9, 1, 4 };"""
+    
+        let fsharp = 
+             """let mutable ListGeneric = new List<int>([| 5; 9; 1; 4 |])
+                ()"""
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)  

@@ -63,7 +63,7 @@ type FullFileTests () =
                     inherit FirebaseInstanceIdService()
                     let TAG = "MyFirebaseIIDService"
 
-                    member this.OnTokenRefresh() =
+                    override this.OnTokenRefresh() =
                         let mutable refreshedToken = FirebaseInstanceId.Instance.Token
                         Log.Debug(TAG, "Refreshed token: " + (refreshedToken.ToString()))
                         this.SendRegistrationToServer(refreshedToken)
@@ -319,12 +319,12 @@ type FullFileTests () =
              """type QuestStarted() =
                     member val Name: string = Unchecked.defaultof<string> with get, set
                     member val Id: Guid = Unchecked.defaultof<Guid> with get, set
-                    member this.ToString(): string = sprintf "Quest %O started" (Name)
+                    override this.ToString(): string = sprintf "Quest %O started" (Name)
 
                 type QuestEnded() =
                     member val Name: string = Unchecked.defaultof<string> with get, set
                     member val Id: Guid = Unchecked.defaultof<Guid> with get, set
-                    member this.ToString(): string = sprintf "Quest %O ended" (Name)"""
+                    override this.ToString(): string = sprintf "Quest %O ended" (Name)"""
 
         csharp |> Converter.runWithConfig false 
         |> (fun x -> printfn "%s" x; x)
@@ -354,18 +354,18 @@ type FullFileTests () =
              """type IService =
                     abstract Serve: unit -> unit
  
-                type Client(_service: IService) =
-                    member this.ServeMethod() = this._service.Serve()
+                type Service1() =
+                    member this.Serve() = Console.WriteLine("Service1 Called")
+                    interface IService with
+                        member this.Serve() = this.Serve()
 
                 type Service2() =
                     member this.Serve() = Console.WriteLine("Service2 Called")
                     interface IService with
                         member this.Serve() = this.Serve()
-
-                type Service1() =
-                    member this.Serve() = Console.WriteLine("Service1 Called")
-                    interface IService with
-                        member this.Serve() = this.Serve()"""
+                        
+                type Client(_service: IService) =
+                    member this.ServeMethod() = this._service.Serve()"""
 
         test <@ 
                 csharp |> Converter.runWithConfig false
@@ -375,4 +375,220 @@ type FullFileTests () =
                     (fsharp 
                         |> formatFsharp 
                         |> (fun x -> x.Split '\n' |> Array.toList) 
-                        |> List.map (fun x -> x.Trim())) @>    
+                        |> List.map (fun x -> x.Trim())) @>       
+
+    [<Test>]
+    member this.``Correct order of classes`` () = 
+        let csharp = 
+             """public class Bar
+                {
+                    public Foo GetFoo()
+                    {
+                        return new Foo().MagicNumber;
+                    }
+                }
+
+                public class Foo
+                {
+                    public int MagicNumber()
+                    {
+                        return 42;
+                    }
+                }
+                 """
+    
+        let fsharp = 
+             """type Foo() =
+                    member this.MagicNumber(): int = 42
+
+                type Bar() =
+                    member this.GetFoo(): Foo = (new Foo()).MagicNumber"""
+
+        test <@ 
+                csharp |> Converter.runWithConfig false
+                |> (fun x -> x.Split '\n' |> Array.toList)
+                |> List.map (fun x -> x.Trim())
+                    = 
+                    (fsharp 
+                        |> formatFsharp 
+                        |> (fun x -> x.Split '\n' |> Array.toList) 
+                        |> List.map (fun x -> x.Trim())) @>       
+
+
+    [<Test>]
+    member this.``fixed complex class ordering`` () = 
+        let csharp = 
+             """public class D : C
+                {
+                }
+
+                public class C : B
+                {
+                }
+
+                public class B : A
+                {
+                }
+
+                public class A
+                {
+                }"""
+    
+        let fsharp = 
+             """type A() =
+
+                type B() =
+                    inherit A()
+                
+                type C() =
+                    inherit B()
+
+                type D() =
+                    inherit C()"""
+
+        test <@ 
+                csharp |> Converter.runWithConfig false
+                |> (fun x -> x.Split '\n' |> Array.toList)
+                |> List.map (fun x -> x.Trim())
+                    = 
+                    (fsharp 
+                        |> formatFsharp 
+                        |> (fun x -> x.Split '\n' |> Array.toList) 
+                        |> List.map (fun x -> x.Trim())) @>       
+
+    [<Test>]
+    member this.``fixed two sets of related classes`` () = 
+        let csharp = 
+             """public class D : C
+                {
+                }
+
+                public class C : B
+                {
+                }
+
+                public class B
+                {
+                }
+
+                public class A
+                {
+                }
+
+                public class X : Z
+                {
+                }
+                
+                public class Z
+                {
+                }"""
+    
+        let fsharp = 
+             """type B() =
+
+                type A() =
+
+                type Z() =
+                
+                type C() =
+                    inherit B()
+
+                type X() = 
+                    inherit Z()
+
+                type D() =
+                    inherit C()"""
+
+        test <@ 
+                csharp |> Converter.runWithConfig false
+                |> (fun x -> x.Split '\n' |> Array.toList)
+                |> List.map (fun x -> x.Trim())
+                    = 
+                    (fsharp 
+                        |> formatFsharp 
+                        |> (fun x -> x.Split '\n' |> Array.toList) 
+                        |> List.map (fun x -> x.Trim())) @>       
+
+    [<Test>]
+    member this.``reoder main method and claseses`` () = 
+        let csharp = 
+             """using System;
+                using System.Collections.Generic;
+                using System.Linq;
+                using System.Text;
+
+                namespace Inheritance {
+                   class Test {
+                      static void Main(string[] args) {
+                         Father f = new Father();
+                         f.display();
+
+                         Son s = new Son();
+                         s.display();
+                         s.displayOne();
+
+                         Daughter d = new Daughter();
+                         d.displayTwo();
+
+                         Console.ReadKey();
+                      }
+
+                      class Father {
+                         public void display() {
+                            Console.WriteLine("Display...");
+                         }
+                      }
+
+                      class Son : Father {
+                         public void displayOne() {
+                            Console.WriteLine("Display One");
+                         }
+                      }
+
+                      class Daughter : Father {
+                         public void displayTwo() {
+                            Console.WriteLine("Display Two");
+                         }
+                      }
+                   }
+                }"""
+    
+        let fsharp = 
+             """namespace Inheritance
+ 
+                open System.Text
+                open System.Linq
+                open System
+                open System.Collections.Generic
+                
+                type Father() =
+                    member this.display() = Console.WriteLine("Display...")
+                
+                type Son() =
+                    inherit Father()
+                    member this.displayOne() = Console.WriteLine("Display One")
+                
+                type Daughter() =
+                    inherit Father()
+                    member this.displayTwo() = Console.WriteLine("Display Two")
+                
+                type Test() =
+                    static member Main(args: string []) =
+                        let mutable f = new Father()
+                        f.display()
+                        let mutable s = new Son()
+                        s.display()
+                        s.displayOne()
+                        let mutable d = new Daughter()
+                        d.displayTwo()
+                        Console.ReadKey()"""
+
+        test <@ 
+                csharp |> Converter.runWithConfig false
+                |> (fun x -> x.Split '\n' |> Array.toList)
+                |> List.map (fun x -> x.Trim())
+                    = 
+                    (fsharp 
+                        |> formatFsharp 
+                        |> (fun x -> x.Split '\n' |> Array.toList) 
+                        |> List.map (fun x -> x.Trim())) @>       

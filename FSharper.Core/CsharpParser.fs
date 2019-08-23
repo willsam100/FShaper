@@ -466,13 +466,12 @@ type CSharpStatementWalker() =
                 let validOps = ["op_LessThan"; "op_LessThanOrEqual"; "op_LessThanOrEqual"; "op_GreaterThanOrEqual"; "op_GreaterThan"]
                 match CSharpStatementWalker.ParseExpression x.Condition with
                 | Expr.Const _ as e -> Some e
-                | BinaryOp (left,op,Expr.LongIdent (a,b)) when List.contains op validOps -> Expr.LongIdent (a,b) |> Some
-                | BinaryOp (left,op, Expr.DotGet (e, b)) when List.contains op validOps -> Expr.DotGet (e, b) |> Some
-                | BinaryOp (left,"op_LessThanOrEqual",Expr.Const (SynConst.Int32 a)) -> 
-                    a + 1 |> SynConst.Int32 |> Expr.Const |> Some // Add one since it is <=
+                | BinaryOp (left,"op_LessThan",Expr.Const (SynConst.Int32 a)) -> Expr.Const (SynConst.Int32 (a - 1)) |> Some
+                | BinaryOp (left,"op_LessThan",right) -> 
+                    let subtract = "-" |> PrettyNaming.CompileOpName |> toLongIdent
+                    Expr.Paren (ExprOps.toInfixApp right subtract (Expr.Const (SynConst.Int32 1)) ) |> Some
                 | BinaryOp (left,"op_GreaterThan",Expr.Const (SynConst.Int32 a)) -> 
                     a + 1 |> SynConst.Int32 |> Expr.Const |> Some // Add one since it is >
-                | BinaryOp (left,op,Expr.Const a) when List.contains op validOps -> Expr.Const a |> Some
                 | BinaryOp (left,op, a) when List.contains op validOps -> a |> replaceCastToInt |> Some
                 | e -> printfn "END: %A" e; None
 
@@ -593,7 +592,10 @@ type CSharpStatementWalker() =
             else 
                 CSharpStatementWalker.ParseExpression x.Expression |> Expr.ReturnFromIf
         //| :? SwitchStatementSyntax as x -> "SwitchStatement" |> toLongIdent
-        //| :? ThrowStatementSyntax as x -> "ThrowStatement" |> toLongIdent
+        | :? ThrowStatementSyntax as x -> 
+            let longIdent = toLongIdent "raise"
+            ExprOps.toApp longIdent (CSharpStatementWalker.ParseExpression x.Expression)
+
         | :? TryStatementSyntax as x -> 
 
             let catches = 
@@ -988,7 +990,8 @@ type CSharpStatementWalker() =
             |> sequential
             |> (fun x -> Expr.ArrayOrListOfSeqExpr (true, x))
 
-        | :? InstanceExpressionSyntax as x -> toLongIdent "this" //(fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "InstanceExpressionSyntax"
+        | :? BaseExpressionSyntax -> toLongIdent "base"
+        | :? InstanceExpressionSyntax -> toLongIdent "this"
         | :? InterpolatedStringExpressionSyntax as x -> 
 
             let args = 
@@ -1048,14 +1051,27 @@ type CSharpStatementWalker() =
                 match xs, init with 
                 | Expr.Tuple xs, Expr.Tuple ys -> Expr.Tuple (xs @ ys)
                 | Expr.Tuple xs, Expr.Const SynConst.Unit -> Expr.Tuple xs
+                | Expr.Tuple [], Expr.ArrayOrListOfSeqExpr (_, expr) as x ->  
+
+                    let isClassMemberInilisation = 
+                        expr 
+                        |> containsExpr (function 
+                            | Expr.App (_, _, Expr.Ident "op_Equality", _) -> true
+                            | _ -> false )
+                        |> List.isEmpty
+                        |> not
+
+                    if isClassMemberInilisation then 
+                        expr |> ExprOps.sequentialToList |> Expr.Tuple
+                    else snd x // Handles init for list ie new List<int>([| 1; 2; |])
                 | _, _ -> failwithf "Unexpected synax constructing class: %s" <| x.Type.ToFullString()                
 
             let args = 
-                match x.ArgumentList with 
-                | null -> Expr.Const SynConst.Unit
-                | x -> CSharpStatementWalker.ParseChsarpNode x
+                let args = 
+                    match x.ArgumentList with 
+                    | null -> Expr.Const SynConst.Unit
+                    | x -> CSharpStatementWalker.ParseChsarpNode x
 
-            let args = 
                 match args with
                 | Expr.Paren xs -> joinArgs xs
                 | Expr.Const SynConst.Unit -> joinArgs (Expr.Tuple [])
@@ -1092,10 +1108,9 @@ type CSharpStatementWalker() =
             Expr.TypeApp (Expr.Ident "typeof", ident)
 
         | :? TypeSyntax as x -> 
-            printfn "TypeSyntax: %A" x
-            printfn "TypeSyntax: %A" <| x.Kind()
+            x.WithoutTrivia().ToString() |> fixKeywords |> toLongIdent
 
-            (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "TypeSyntax"
+            // x.WithoutTrivia().ToFullString() |> toLongIdent
         | _ ->  Expr.LongIdent(false, createErorrCode node)
             
 
@@ -1120,18 +1135,19 @@ type FSharperTreeBuilder() =
 
         let classes = 
             node.ChildNodes().OfType<ClassDeclarationSyntax>()
-            |> Seq.map this.VisitClassDeclaration
+            |> Seq.collect this.VisitClassDeclaration
             |> Seq.toList
+            |> List.map Structure.C
 
         let interfaces = 
             node.ChildNodes().OfType<InterfaceDeclarationSyntax>()
             |> Seq.map this.VisitInterfaceDeclaration
             |> Seq.toList
+            |> List.map Structure.Interface
             
         {
             Namespace.Name = node.Name.WithoutTrivia().ToFullString()
-            Namespace.Classes = classes
-            Namespace.Interfaces = interfaces
+            Namespace.Structures = interfaces @ classes
         } 
 
 
@@ -1166,13 +1182,9 @@ type FSharperTreeBuilder() =
                 // | :? IncompleteMemberSyntax as x -> x.ToFullString()
                 // | :? NamespaceDeclarationSyntax as x -> x.ToFullString()
                 ) |> Seq.toList
+        (node.Identifier.WithoutTrivia().Text |> toSingleIdent, members)
 
-        {
-            Interface.Name = node.Identifier.WithoutTrivia().Text |> toSingleIdent
-            Methods = members
-        }
-
-    member this.VisitClassDeclaration(node:ClassDeclarationSyntax ) =
+    member this.VisitClassDeclaration(node:ClassDeclarationSyntax ): Class list =
 
         let attrs = 
             node.AttributeLists
@@ -1226,17 +1238,19 @@ type FSharperTreeBuilder() =
         let containsPublicNonOverrideMethod = 
             methods |> List.filter (fun x -> not x.IsOverride && not x.IsPrivate) |> List.length
 
+        let containsOverrideMethod = 
+            methods |> List.filter (fun x -> x.IsOverride) |> List.length
+
         let baseTypes = 
             node.BaseList 
             |> Option.ofObj 
             |> Option.bind (fun x -> 
-
                 x.Types 
                 |> Seq.map (fun x -> ParserUtil.parseType x.Type)
                 |> Seq.toList
                 |> function 
                 | [] -> None
-                | x::_ as xs when doesBaseTypeBeginWithI x && containsPublicNonOverrideMethod > 0 -> Some (None, xs) 
+                | x::_ as xs when doesBaseTypeBeginWithI x && containsOverrideMethod = 0 -> Some (None, xs) 
                 | x::xs -> Some (Some x, xs)  )
 
         let ctors = 
@@ -1249,23 +1263,41 @@ type FSharperTreeBuilder() =
             |> Seq.collect this.VisitFieldDeclaration
             |> Seq.toList
 
-
+        let publicFields = 
+            fields 
+            |> List.filter (fun x -> x.IsPublic)
+            |> List.map (fun x -> 
+                {
+                    Prop.Name = x.Name
+                    Type = x.Type
+                    Prop.Get = x.Initilizer
+                    Prop.Set = None
+                    Access = None
+                } 
+            )
 
         let properties = 
             node.ChildNodes().OfType<PropertyDeclarationSyntax>()
             |> Seq.map this.VisitPropertyDeclaration
             |> Seq.toList
-            
-        {
+
+        let innerClasses = 
+            node.ChildNodes().OfType<ClassDeclarationSyntax>()
+            |> Seq.collect this.VisitClassDeclaration
+            |> Seq.toList
+
+        let klass = {
             Name = { ClassName.Name = node.Identifier.ValueText; Generics = [] }
             ImplementInterfaces = baseTypes |> Option.map (snd) |> Option.toList |> List.concat
             BaseClass = baseTypes |> Option.bind fst
             Constructors = ctors
-            Fields = fields
+            Fields = (fields |> List.filter (fun x -> not x.IsPublic)) // public fields are not a thing in F#
             Methods = methods
-            Properties = properties
+            Properties = properties @ publicFields
             TypeParameters = typeParameters
             Attributes = attrs  }
+
+        innerClasses @ [klass]
 
 
     member this.VisitConstructorDeclaration (node:ConstructorDeclarationSyntax) = 
@@ -1454,11 +1486,11 @@ type FSharperTreeBuilder() =
             match x with
             | :? UsingDirectiveSyntax as x -> x |> this.VisitUsingDirective |> UsingStatement
             | :? NamespaceDeclarationSyntax as x -> x |> this.VisitNamespaceDeclaration |> Namespace
-            | :? MethodDeclarationSyntax as x -> x |> this.VisitMethodDeclaration |> methodToClass |> Class
-            | :? InterfaceDeclarationSyntax as x -> x |> this.VisitInterfaceDeclaration |> Interface
-            | :? ClassDeclarationSyntax as x -> x |> this.VisitClassDeclaration |> Class
-            | :? FieldDeclarationSyntax as x -> x |> this.VisitFieldDeclaration |> fieldToClass |> Class
-            | :? PropertyDeclarationSyntax as x -> x |> this.VisitPropertyDeclaration |>  propertyToClass |> Class
+            | :? MethodDeclarationSyntax as x -> x |> this.VisitMethodDeclaration |> methodToClass |> C |> List.singleton |> Structures
+            | :? InterfaceDeclarationSyntax as x -> x |> this.VisitInterfaceDeclaration |> Interface |> List.singleton |> Structures
+            | :? ClassDeclarationSyntax as x -> x |> this.VisitClassDeclaration |> List.map C  |> Structures
+            | :? FieldDeclarationSyntax as x -> x |> this.VisitFieldDeclaration |> fieldToClass |> C |> List.singleton |> Structures
+            | :? PropertyDeclarationSyntax as x -> x |> this.VisitPropertyDeclaration |>  propertyToClass |> C |> List.singleton |> Structures
             //| x -> printfn "Skipping element: %A" <| x.Kind(); Empty
 
         match tree with 
@@ -1469,51 +1501,75 @@ type FSharperTreeBuilder() =
             | File f1, File f2 -> 
                 let result = 
                     match f1, f2 with 
-                    | FileWithUsing (u, inter, cs), FileWithUsing (u', inter', cs') -> FileWithUsing (u @ u', inter @ inter', cs @ cs') 
-                    | FileWithUsing (u, inter, cs), FileWithUsingNamespace (u', ns) -> FileWithUsingNamespaceAndDefault (u @ u', ns, inter, cs) 
-                    | FileWithUsing (u, inter, cs), FileWithUsingNamespaceAndDefault (u', ns, inter', cs') -> FileWithUsingNamespaceAndDefault (u, ns, inter @ inter', cs @ cs') 
-                    | FileWithUsingNamespace (u, ns), FileWithUsing (u', inter, cs) -> FileWithUsingNamespaceAndDefault (u @ u', ns, inter, cs)
+                    | FileWithUsing (u, s), FileWithUsing (u', s') -> FileWithUsing (u @ u', s @ s') 
+                    | FileWithUsing (u, s), FileWithUsingNamespace (u', ns) -> FileWithUsingNamespaceAndDefault (u @ u', ns, s) 
+                    | FileWithUsing (u, s), FileWithUsingNamespaceAndDefault (u', ns, s') -> FileWithUsingNamespaceAndDefault (u, ns, s @ s') 
+                    | FileWithUsingNamespace (u, ns), FileWithUsing (u', s) -> FileWithUsingNamespaceAndDefault (u @ u', ns, s)
                     | FileWithUsingNamespace (u, ns), FileWithUsingNamespace (u', ns') -> FileWithUsingNamespace (u @ u', ns @ ns')
-                    | FileWithUsingNamespace (u, ns), FileWithUsingNamespaceAndDefault (u', ns', inter, cs) -> FileWithUsingNamespaceAndDefault (u, ns @ ns', inter, cs)
-                    | FileWithUsingNamespaceAndDefault (u, ns, inter, cs), FileWithUsing (u', inter', cs') -> FileWithUsingNamespaceAndDefault (u @ u', ns, inter @ inter', cs @ cs')
-                    | FileWithUsingNamespaceAndDefault (u, ns, inter, cs), FileWithUsingNamespace (u', ns') -> FileWithUsingNamespaceAndDefault (u @ u', ns @ ns', inter, cs)
-                    | FileWithUsingNamespaceAndDefault (u, ns, inter, cs), FileWithUsingNamespaceAndDefault (u', ns', inter', cs')  -> 
-                        FileWithUsingNamespaceAndDefault (u @ u', ns @ ns', inter @ inter', cs @ cs')
+                    | FileWithUsingNamespace (u, ns), FileWithUsingNamespaceAndDefault (u', ns', s) -> FileWithUsingNamespaceAndDefault (u, ns @ ns', s)
+                    | FileWithUsingNamespaceAndDefault (u, ns, s), FileWithUsing (u', s') -> FileWithUsingNamespaceAndDefault (u @ u', ns, s @ s')
+                    | FileWithUsingNamespaceAndDefault (u, ns, s), FileWithUsingNamespace (u', ns') -> FileWithUsingNamespaceAndDefault (u @ u', ns @ ns', s)
+                    | FileWithUsingNamespaceAndDefault (u, ns, s), FileWithUsingNamespaceAndDefault (u', ns', s')  -> 
+                        FileWithUsingNamespaceAndDefault (u @ u', ns @ ns', s @ s')
                 result |> File |> Some
                 
-            | File f, Interface i -> failwith "Meging interface with file, not implemented"
-            | File f, Class c -> 
+            // | File f, Interface i -> failwith "Meging interface with file, not implemented"
+            | File f, Structures structures -> 
                 let result = 
                     match f with 
-                    | FileWithUsing (u, inter, cs) -> FileWithUsing (u, inter, c :: cs) 
-                    | FileWithUsingNamespace (u, ns) -> FileWithUsingNamespaceAndDefault (u, ns, [], [c])
-                    | FileWithUsingNamespaceAndDefault (u, ns, inter, cs) -> FileWithUsingNamespaceAndDefault (u, ns, inter, c :: cs)
+                    | FileWithUsing (u, s) -> FileWithUsing (u, s @ structures) 
+                    | FileWithUsingNamespace (u, ns) -> FileWithUsingNamespaceAndDefault (u, ns, structures)
+                    | FileWithUsingNamespaceAndDefault (u, ns, s) -> FileWithUsingNamespaceAndDefault (u, ns, s @ structures)
                 result |> File |> Some
             
             | File f, Namespace ``namespace`` -> 
 
                 let file = 
                     match f with 
-                    | FileWithUsing (u, inter, c) -> FileWithUsingNamespaceAndDefault (u, [``namespace``], inter, c)
+                    | FileWithUsing (u, s) -> FileWithUsingNamespaceAndDefault (u, [``namespace``], s)
                     | FileWithUsingNamespace (u, ns') -> FileWithUsingNamespace (u, ``namespace`` :: ns')
-                    | FileWithUsingNamespaceAndDefault (u, ns', inter, c) -> FileWithUsingNamespaceAndDefault (u, ``namespace`` :: ns', inter, c)
+                    | FileWithUsingNamespaceAndDefault (u, ns', s) -> FileWithUsingNamespaceAndDefault (u, ``namespace`` :: ns', s)
                 file |> File |> Some
 
             | File f, UsingStatement using -> 
 
                 let file = 
                     match f with 
-                    | FileWithUsing (usings, inter, c) -> FileWithUsing (using :: usings, inter, c)
+                    | FileWithUsing (usings, s) -> FileWithUsing (using :: usings, s)
                     | FileWithUsingNamespace (usings, ns) -> FileWithUsingNamespace (using :: usings, ns)
-                    | FileWithUsingNamespaceAndDefault (usings, ns, inter, c) -> FileWithUsingNamespaceAndDefault (using :: usings, ns, inter, c)
+                    | FileWithUsingNamespaceAndDefault (usings, ns, s) -> FileWithUsingNamespaceAndDefault (using :: usings, ns, s)
                 file |> File |> Some
 
-            | UsingStatement using1, UsingStatement using2 -> FileWithUsing ([using1; using2], [], []) |> File |> Some
+            | UsingStatement using1, UsingStatement using2 -> FileWithUsing ([using1; using2], []) |> File |> Some
             | UsingStatement using, Namespace ``namespace`` -> FileWithUsingNamespace ([using], [``namespace``]) |> File |> Some
-            | UsingStatement using, Class name -> FileWithUsing ([using; ], [], [name]) |> File |> Some
-            | Class name1, Class name2 -> FileWithUsingNamespaceAndDefault ([], [], [], [name1; name2]) |> File |> Some
-            | Interface inter, Class c1 -> 
-                FileWithUsingNamespaceAndDefault ([], [], [inter], [c1]) |> File |> Some
+            | UsingStatement using, File f -> 
+                let result = 
+                    match f with 
+                    | FileWithUsing (u, s) -> FileWithUsing (using :: u, s) 
+                    | FileWithUsingNamespace (u, ns) -> FileWithUsingNamespace (using :: u, ns)
+                    | FileWithUsingNamespaceAndDefault (u, ns, s) -> FileWithUsingNamespaceAndDefault (using :: u, ns, s)
+                result |> File |> Some
+            | UsingStatement using, Structures s -> FileWithUsing ([using], s) |> File |> Some
 
+            | Structures s, Structures s' -> Structures (s @ s') |> Some
+            | Structures s, UsingStatement using -> FileWithUsing ([using], s) |> File |> Some
+            | Structures s, Namespace ns -> FileWithUsingNamespaceAndDefault ([], [ns], s) |> File |> Some
+            | Structures structures, File f -> 
+                let result = 
+                    match f with 
+                    | FileWithUsing (u, s) -> FileWithUsing (u, s @ structures) 
+                    | FileWithUsingNamespace (u, ns) -> FileWithUsingNamespaceAndDefault (u, ns, structures)
+                    | FileWithUsingNamespaceAndDefault (u, ns, s) -> FileWithUsingNamespaceAndDefault (u, ns, s @ structures)
+                result |> File |> Some
 
+            | Namespace ns, Namespace ns' -> FileWithUsingNamespace ([], [ns; ns']) |> File |> Some
+            | Namespace ns, UsingStatement using -> FileWithUsingNamespace ([using], [ns]) |> File |> Some
+            | Namespace ns, Structures s -> FileWithUsingNamespaceAndDefault ([], [ns], s) |> File |> Some
+            | Namespace ns, File f -> 
+                let result = 
+                    match f with 
+                    | FileWithUsing (u, s) -> FileWithUsing (u, s) 
+                    | FileWithUsingNamespace (u, ns') -> FileWithUsingNamespace (u, ns :: ns')
+                    | FileWithUsingNamespaceAndDefault (u, ns', s) -> FileWithUsingNamespaceAndDefault (u, ns :: ns', s)
+                result |> File |> Some
             //| _, _ -> sprintf "C# not supported: %A, %A" tree result |> failwith
