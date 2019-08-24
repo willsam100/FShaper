@@ -575,12 +575,14 @@ let toFsharpSynaxTree input =
 // To compile the code, scaffolding must be added ie a namespace, class etc. 
 // the output should match the input; this removes the scaffolding.
 let removeDefaultScaffolding (fsharpOutput:string) = 
+    let newLine = System.Environment.NewLine
     fsharpOutput
-    |> (fun x -> x.Replace("namespace ``Program35949ae4-3f6e-11e9-b4dc-230deb73e77f``\n", ""))
-    |> (fun x -> x.Replace("type ``Klass067803f4-3f6e-11e9-b4df-6f8305ceb4a6``() =\n", ""))
-    |> (fun x -> x.Replace("module ``Program35949ae4-3f6e-11e9-b4dc-230deb73e77f``\n\n", ""))
-    |> (fun x -> x.Replace("\"Program35949ae4-3f6e-11e9-b4dc-230deb73e77f\"\n", ""))
-    |> (fun x -> x.Replace("    member this.Method156143763f6e11e984e11f16c4cfd728() =\n", ""))
+    |> (fun x -> x.Replace("namespace ``Program35949ae4-3f6e-11e9-b4dc-230deb73e77f``" + newLine, ""))
+    |> (fun x -> x.Replace("type ``Klass067803f4-3f6e-11e9-b4df-6f8305ceb4a6``() =" + newLine, ""))
+    |> (fun x -> x.Replace("module ``Program35949ae4-3f6e-11e9-b4dc-230deb73e77f``" + newLine + newLine, ""))
+    |> (fun x -> x.Replace("\"Program35949ae4-3f6e-11e9-b4dc-230deb73e77f\"" + newLine, ""))
+    |> (fun x -> x.Replace("``Program35949ae4-3f6e-11e9-b4dc-230deb73e77f``" + newLine, ""))
+    |> (fun x -> x.Replace("    member this.Method156143763f6e11e984e11f16c4cfd728() =" + newLine, ""))
     |> (fun x -> x.Replace("""\010""", "\\n"))
     |> (fun x -> x.Replace("""\009""", "\\t"))
     |> (fun x -> x.Replace("""\013""", "\\r"))
