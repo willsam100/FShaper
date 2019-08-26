@@ -203,6 +203,7 @@ module ParserUtil =
         | "object" -> "obj"
         | "Object" -> "obj"
         | "long" -> "int64"
+        | "float" -> "float32"
         | "IEnumerable" -> "seq"
         | "void" -> "unit"
         | "ushort" -> "uint16"

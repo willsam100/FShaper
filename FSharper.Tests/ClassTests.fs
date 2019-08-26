@@ -520,3 +520,23 @@ type ClassTests () =
                             |> formatFsharp 
                             |> (fun x -> x.Split '\n' |> Array.toList) 
                             |> List.map (fun x -> x.Trim())) @> 
+
+
+    [<Test>]
+    member this.``Convert float to float32`` () = 
+        let csharp = 
+             """class TransformedData
+                {
+                    public float Education { get; set; }
+
+                    public float ZipCode { get; set; }
+                }"""
+    
+        let fsharp = 
+             """type TransformedData() =
+                    member val Education: float32 = Unchecked.defaultof<float32> with get, set
+                    member val ZipCode: float32 = Unchecked.defaultof<float32> with get, set"""
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)  

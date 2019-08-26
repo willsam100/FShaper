@@ -1104,4 +1104,4 @@ type ConversionTests () =
                 ()"""
         csharp |> Converter.runWithConfig false 
         |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)  
+        |> should equal (formatFsharp fsharp)      
