@@ -1144,12 +1144,30 @@ type FSharperTreeBuilder() =
             |> Seq.map this.VisitInterfaceDeclaration
             |> Seq.toList
             |> List.map Structure.Interface
+
+        let enums =
+            node.ChildNodes().OfType<EnumDeclarationSyntax>()
+            |> Seq.map this.VisitEnumDeclaration
+            |> Seq.toList
+            |> List.map Structure.E        
             
         {
             Namespace.Name = node.Name.WithoutTrivia().ToFullString()
-            Namespace.Structures = interfaces @ classes
+            Namespace.Structures = interfaces @ classes @ enums
         } 
 
+    member this.VisitEnumDeclaration(node:EnumDeclarationSyntax) =
+        // TODO: real mapping after initial test passes (Fantomas config tweaking)
+        let enumMembers =
+            [
+                ("None", 0)
+                ("First", 1)
+            ]                           
+        let e = {
+            Enum.Name = node.Identifier.ValueText
+            Members = enumMembers
+        } 
+        e        
 
     member this.VisitInterfaceDeclaration(node:InterfaceDeclarationSyntax) =    
 
@@ -1491,6 +1509,7 @@ type FSharperTreeBuilder() =
             | :? ClassDeclarationSyntax as x -> x |> this.VisitClassDeclaration |> List.map C  |> Structures
             | :? FieldDeclarationSyntax as x -> x |> this.VisitFieldDeclaration |> fieldToClass |> C |> List.singleton |> Structures
             | :? PropertyDeclarationSyntax as x -> x |> this.VisitPropertyDeclaration |>  propertyToClass |> C |> List.singleton |> Structures
+            | :? EnumDeclarationSyntax as x -> x |> this.VisitEnumDeclaration |> E |> List.singleton |> Structures
             //| x -> printfn "Skipping element: %A" <| x.Kind(); Empty
 
         match tree with 

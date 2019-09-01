@@ -393,6 +393,13 @@ type Class = {
         TypeParameters = []
     }
 
+type Enum = {
+    Name: string
+    Members: (string * EnumMemberValue) list
+}
+//TODO: non-default enum types
+and EnumMemberValue = int
+
 type InferfaceMethod = Method of name:Ident * parameters:SynType list
 
 type UsingStatement = {
@@ -402,6 +409,7 @@ type UsingStatement = {
 type Structure = 
     | Interface of name:Ident * methods:InferfaceMethod list
     | C of Class
+    | E of Enum
 
 type Namespace = {
     Name:string

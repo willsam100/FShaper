@@ -658,6 +658,7 @@ module TreeOps =
         let getName = function 
             | C c -> c.Name.Name
             | Interface (name, _) -> name.idText
+            | E e -> e.Name
 
         let names = s |> List.map getName
         let mapping = s |> List.map (fun x -> getName x, x) |> Map.ofList
@@ -679,6 +680,7 @@ module TreeOps =
                 ]   
             | Interface (_, methods) -> 
                 methods |> List.collect (fun (Method (_, types)) -> types |> List.map SynType.getName)
+            | E _ -> []        
 
         let dependencyCount = getDependencies >> List.filter (fun x -> names |> List.contains x)
   

@@ -518,9 +518,42 @@ module FormatOuput =
         |> List.singleton
         |> (fun x -> SynModuleDecl.Types (x, range0))
 
+    let toEnum (enum: Enum) =  
+        let createEnumCase name value = 
+            EnumCase(
+                (* SynAttributes *) 
+                SynAttributes.Empty,
+                (* ident:Ident *) 
+                toSingleIdent name,
+                (* SynConst *) 
+                (SynConst.Int32 value),
+                (* PreXmlDoc *) 
+                PreXmlDoc.Empty,
+                (* range:range *) 
+                range0
+        )
+
+        let enumCases = 
+            enum.Members
+            |> List.map (fun (name, value) -> createEnumCase name value)
+
+        let theEnum: SynTypeDefnSimpleRepr = 
+            SynTypeDefnSimpleRepr.Enum(
+                (* SynEnumCases *)
+                enumCases,
+                (* range *) 
+                range0
+        )
+
+        let info = ComponentInfo ([], [], [], (toIdent enum.Name), PreXmlDocEmpty, false, None, range0)
+        let model = SynTypeDefnRepr.Simple (theEnum,range0)
+        let typeDef = TypeDefn (info, model, [], range0) 
+        SynModuleDecl.Types ([typeDef], range0)
+
     let parseStructure = function
         | C c -> toClass c
         | Interface (name, methods) -> (name,methods) |> toInterface |> (fun xs -> SynModuleDecl.Types ([xs], range0)) 
+        | E e -> toEnum e
 
 let toFsharpSynaxTree input =
 
@@ -625,7 +658,7 @@ let runWithConfig validateCode (input:string) =
             {
                 FormatConfig.Default with 
                     FormatConfig.SemicolonAtEndOfLine = false
-                    FormatConfig.StrictMode = false
+                    FormatConfig.StrictMode = true
                     FormatConfig.PageWidth = 120
                     FormatConfig.SpaceAfterComma = true
                     FormatConfig.SpaceBeforeArgument = true
@@ -652,7 +685,8 @@ let runWithConfig validateCode (input:string) =
                     | :? NamespaceDeclarationSyntax
                     | :? MethodDeclarationSyntax 
                     | :? InterfaceDeclarationSyntax
-                    | :? ClassDeclarationSyntax -> true
+                    | :? ClassDeclarationSyntax 
+                    | :? EnumDeclarationSyntax -> true
                     | _ -> false )
 
             if t.GetDiagnostics() |> Seq.isEmpty && hasValidNode then Some x
