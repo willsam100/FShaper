@@ -519,14 +519,14 @@ module FormatOuput =
         |> (fun x -> SynModuleDecl.Types (x, range0))
 
     let toEnum (enum: Enum) =  
-        let createEnumCase name value = 
+        let createEnumCase name synConst = 
             EnumCase(
                 (* SynAttributes *) 
                 SynAttributes.Empty,
                 (* ident:Ident *) 
                 toSingleIdent name,
                 (* SynConst *) 
-                (SynConst.Int32 value),
+                synConst,
                 (* PreXmlDoc *) 
                 PreXmlDoc.Empty,
                 (* range:range *) 
@@ -535,7 +535,10 @@ module FormatOuput =
 
         let enumCases = 
             enum.Members
-            |> List.map (fun (name, value) -> createEnumCase name value)
+            |> List.choose (fun (name, expr) -> 
+                match toSynExpr expr with
+                | SynExpr.Const(synConst, _) -> createEnumCase name synConst |> Some
+                | _ -> None )
 
         let theEnum: SynTypeDefnSimpleRepr = 
             SynTypeDefnSimpleRepr.Enum(

@@ -395,10 +395,10 @@ type Class = {
 
 type Enum = {
     Name: string
-    Members: (string * EnumMemberValue) list
+    Members: EnumMemberValue list
 }
 //TODO: non-default enum types
-and EnumMemberValue = int
+and EnumMemberValue = string * Expr
 
 type InferfaceMethod = Method of name:Ident * parameters:SynType list
 

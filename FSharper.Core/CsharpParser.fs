@@ -1157,17 +1157,21 @@ type FSharperTreeBuilder() =
         } 
 
     member this.VisitEnumDeclaration(node:EnumDeclarationSyntax) =
-        // TODO: real mapping after initial test passes (Fantomas config tweaking)
         let enumMembers =
-            [
-                ("None", 0)
-                ("First", 1)
-            ]                           
+             node.Members
+             |> Seq.map this.VisitEnumMemberDeclaration
+             |> Seq.toList                            
         let e = {
             Enum.Name = node.Identifier.ValueText
             Members = enumMembers
         } 
-        e        
+        e   
+        
+    member this.VisitEnumMemberDeclaration(node:EnumMemberDeclarationSyntax) =
+        let nodeValueExpr = CSharpStatementWalker.ParseChsarpNode node.EqualsValue.Value
+        let theMember = EnumMemberValue (node.Identifier.ValueText, nodeValueExpr)
+        theMember 
+        
 
     member this.VisitInterfaceDeclaration(node:InterfaceDeclarationSyntax) =    
 

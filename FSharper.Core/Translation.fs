@@ -680,7 +680,7 @@ module TreeOps =
                 ]   
             | Interface (_, methods) -> 
                 methods |> List.collect (fun (Method (_, types)) -> types |> List.map SynType.getName)
-            | E _ -> []        
+            | E _ -> []          
 
         let dependencyCount = getDependencies >> List.filter (fun x -> names |> List.contains x)
   

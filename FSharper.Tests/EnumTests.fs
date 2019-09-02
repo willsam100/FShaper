@@ -35,3 +35,22 @@ type EnumTests () =
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``Enum with non-sequential values`` () = 
+        let csharp = 
+                """enum EnumTest { 
+                    None = 0,
+                    Ten = 10,
+                    Twenty = 20
+                }"""
+        
+        let fsharp = 
+                """type EnumTest =
+                    | None = 0
+                    | Ten = 10
+                    | Twenty = 20"""
+                       
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
