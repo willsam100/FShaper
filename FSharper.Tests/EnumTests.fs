@@ -86,3 +86,22 @@ type EnumTests () =
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``Enum with various whitespace challenges`` () = 
+        let csharp = 
+             """enum EnumTest { 
+                    None     =   0,
+                    Second   =  10,
+                    Final    =  20
+                }"""
+
+        let fsharp = 
+             """type EnumTest =
+                    | None = 0
+                    | Second = 10
+                    | Final = 20"""
+               
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
