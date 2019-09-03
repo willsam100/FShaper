@@ -396,6 +396,7 @@ type Class = {
 type Enum = {
     Name: string
     Members: EnumMemberValue list
+    Attributes: Attribute list
 }
 //TODO: non-default enum types
 and EnumMemberValue = string * Expr

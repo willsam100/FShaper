@@ -1157,6 +1157,33 @@ type FSharperTreeBuilder() =
         } 
 
     member this.VisitEnumDeclaration(node:EnumDeclarationSyntax) =
+        let attrs = 
+            node.AttributeLists
+            |> Seq.collect (fun x -> 
+                x.Attributes 
+                |> Seq.map (fun x -> 
+                    let attributesValues = 
+                        x.ArgumentList
+                        |> Option.ofObj
+                        |> Option.map (fun x -> x.Arguments)
+                        |> (Option.toList >> List.toSeq >> Seq.concat)
+                        |> Seq.map (fun y -> 
+
+                            if isNull y.NameEquals then 
+                                CSharpStatementWalker.ParseChsarpNode y.Expression |>  AttributeValue
+                            else 
+                                NamedAttributeValue 
+                                    (CSharpStatementWalker.ParseChsarpNode y.NameEquals.Name, 
+                                    CSharpStatementWalker.ParseChsarpNode y.Expression) )
+                        |> Seq.toList
+                        
+                    {
+                        Attribute.Name = x.Name.WithoutTrivia().ToFullString()
+                        Attribute.Parameters = attributesValues 
+                    }
+            ))
+            |> Seq.toList
+        
         let enumMembers =
              node.Members
              |> Seq.map this.VisitEnumMemberDeclaration
@@ -1164,6 +1191,7 @@ type FSharperTreeBuilder() =
         let e = {
             Enum.Name = node.Identifier.ValueText
             Members = enumMembers
+            Attributes = attrs
         } 
         e   
         

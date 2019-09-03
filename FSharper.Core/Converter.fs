@@ -548,7 +548,41 @@ module FormatOuput =
                 range0
         )
 
-        let info = ComponentInfo ([], [], [], (toIdent enum.Name), PreXmlDocEmpty, false, None, range0)
+        let att = 
+            enum.Attributes |> List.map (fun x -> 
+                let arg = 
+                    match x.Parameters with
+                    | [] -> SynExpr.Paren (SynExpr.Ident (Ident("",range0)), range0, None, range0) 
+                    | xs -> 
+
+                        let items = xs |> List.map (function
+                            | AttributeValue.AttributeValue x -> toSynExpr x
+                            | AttributeValue.NamedAttributeValue (left, right) -> 
+                                let left = toSynExpr left
+                                let right = toSynExpr right
+                                
+                                let infixEquals = 
+                                    SynExpr.App
+                                        (ExprAtomicFlag.NonAtomic, true, toSingleIdent "op_Equality" |> SynExpr.Ident, left, range0)
+
+                                SynExpr.App (ExprAtomicFlag.NonAtomic, false, infixEquals, right, range0)
+                        )
+                      
+                        let tuple = 
+                            SynExpr.Tuple (items, [], range0)
+
+                        SynExpr.Paren (tuple, range0, None, range0) 
+
+                {
+                    SynAttribute.TypeName = LongIdentWithDots (toIdent x.Name, [range0])
+                    SynAttribute.ArgExpr = arg
+                    SynAttribute.AppliesToGetterAndSetter = false
+                    SynAttribute.Range = range0
+                    SynAttribute.Target = None
+                }
+            )
+
+        let info = ComponentInfo (att, [], [], (toIdent enum.Name), PreXmlDocEmpty, false, None, range0)
         let model = SynTypeDefnRepr.Simple (theEnum,range0)
         let typeDef = TypeDefn (info, model, [], range0) 
         SynModuleDecl.Types ([typeDef], range0)

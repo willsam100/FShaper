@@ -54,3 +54,35 @@ type EnumTests () =
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``Enum with flags attribute`` () = 
+        let csharp = 
+                """[Flags]
+                enum Days 
+                {
+                    None = 0,
+                    Sunday = 1,
+                    Monday = 2,
+                    Tuesday = 4,
+                    Wednesday = 8,
+                    Thursday = 16,
+                    Friday = 32,
+                    Saturday = 64
+                }"""
+            
+        let fsharp = 
+                """[<Flags>]
+                type Days =
+                    | None = 0
+                    | Sunday = 1
+                    | Monday = 2
+                    | Tuesday = 4
+                    | Wednesday = 8
+                    | Thursday = 16
+                    | Friday = 32
+                    | Saturday = 64"""
+                           
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
