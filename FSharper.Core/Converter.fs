@@ -583,7 +583,7 @@ module FormatOuput =
             )
 
         let info = ComponentInfo (att, [], [], (toIdent enum.Name), PreXmlDocEmpty, false, None, range0)
-        let model = SynTypeDefnRepr.Simple (theEnum,range0)
+        let model = SynTypeDefnRepr.Simple (theEnum, range0)
         let typeDef = TypeDefn (info, model, [], range0) 
         SynModuleDecl.Types ([typeDef], range0)
 

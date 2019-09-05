@@ -227,19 +227,28 @@ type CSharpStatementWalker() =
         | SyntaxKind.NotEqualsExpression-> "!=" |> PrettyNaming.CompileOpName |> Expr.Ident
         | SyntaxKind.NumericLiteralToken -> 
 
-            let s = node.WithoutTrivia().Text
+            let text = node.WithoutTrivia().Text
+            let lowerText = text.ToLower()
+
+            let tryParseHexToInt (s: string) =
+                if s.StartsWith("0x", StringComparison.OrdinalIgnoreCase) 
+                then Int32.TryParse(s.[2..], System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture)
+                else Int32.TryParse s
+
             let asInt = 
-                match Int32.TryParse s with 
+                // added for hex values to pass tests in enums
+                // SysConst args are of that type, numeric base doesn't seem to be preservable
+                match lowerText |> tryParseHexToInt with 
                 | true, x -> Some x 
-                | false,_ ->  None 
+                | false,_ -> None
 
             let asInt64 = 
-                match s.ToLower().Replace("l","") |> Int64.TryParse  with 
+                match lowerText.Replace("l","") |> Int64.TryParse  with 
                 | true, x -> Some x 
                 | false,_ ->  None 
 
             let asfloat = 
-                match s.ToLower().Replace(".","") |> Double.TryParse with 
+                match lowerText.Replace(".","") |> Double.TryParse with 
                 | true, x -> Some x 
                 | false,_ ->  None 
 
@@ -247,7 +256,7 @@ type CSharpStatementWalker() =
             | Some x, _, _ ->  Expr.Const <| SynConst.Int32 x
             | _, Some x, _ ->  Expr.Const <| SynConst.Int64 x
             | _, _, Some x ->  Expr.Const <| SynConst.Double x
-            | _, _, _  ->  toLongIdent s
+            | _, _, _  ->  toLongIdent text
 
         | SyntaxKind.IdentifierToken -> node.WithoutTrivia().ToFullString() |> toLongIdent
         //| SyntaxKind.ReturnKeyword -> Expr.Const SynConst.Unit

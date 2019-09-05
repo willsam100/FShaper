@@ -8,6 +8,7 @@ open System
 [<TestFixture>]
 type EnumTests () =
 
+ 
     let formatFsharp (s:string) = 
 
         let indent = "                "
@@ -102,6 +103,33 @@ type EnumTests () =
                     | Second = 10
                     | Final = 20"""
                
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
+
+    [<Test>]
+    member this.``Enum with flags as hex`` () = 
+        let csharp = 
+                """[Flags]
+                public enum CarOptions
+                {
+                    SunRoof = 0x01,
+                    Spoiler = 0x02,
+                    FogLights = 0x04,
+                    TintedWindows = 0x08,
+                    HeatedSeats = 0x10
+                }"""
+                
+        let fsharp = 
+                """[<Flags>]
+                type CarOptions =
+                    | SunRoof = 1
+                    | Spoiler = 2
+                    | FogLights = 4
+                    | TintedWindows = 8
+                    | HeatedSeats = 16"""
+                               
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
