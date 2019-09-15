@@ -227,19 +227,28 @@ type CSharpStatementWalker() =
         | SyntaxKind.NotEqualsExpression-> "!=" |> PrettyNaming.CompileOpName |> Expr.Ident
         | SyntaxKind.NumericLiteralToken -> 
 
-            let s = node.WithoutTrivia().Text
+            let text = node.WithoutTrivia().Text
+            let lowerText = text.ToLower()
+
+            let tryParseHexToInt (s: string) =
+                if s.StartsWith("0x", StringComparison.OrdinalIgnoreCase) 
+                then Int32.TryParse(s.[2..], System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture)
+                else Int32.TryParse s
+
             let asInt = 
-                match Int32.TryParse s with 
+                // added for hex values to pass tests in enums
+                // SysConst args are of that type, numeric base doesn't seem to be preservable
+                match lowerText |> tryParseHexToInt with 
                 | true, x -> Some x 
-                | false,_ ->  None 
+                | false,_ -> None
 
             let asInt64 = 
-                match s.ToLower().Replace("l","") |> Int64.TryParse  with 
+                match lowerText.Replace("l","") |> Int64.TryParse  with 
                 | true, x -> Some x 
                 | false,_ ->  None 
 
             let asfloat = 
-                match s.ToLower().Replace(".","") |> Double.TryParse with 
+                match lowerText.Replace(".","") |> Double.TryParse with 
                 | true, x -> Some x 
                 | false,_ ->  None 
 
@@ -247,7 +256,7 @@ type CSharpStatementWalker() =
             | Some x, _, _ ->  Expr.Const <| SynConst.Int32 x
             | _, Some x, _ ->  Expr.Const <| SynConst.Int64 x
             | _, _, Some x ->  Expr.Const <| SynConst.Double x
-            | _, _, _  ->  toLongIdent s
+            | _, _, _  ->  toLongIdent text
 
         | SyntaxKind.IdentifierToken -> node.WithoutTrivia().ToFullString() |> toLongIdent
         //| SyntaxKind.ReturnKeyword -> Expr.Const SynConst.Unit
@@ -1144,12 +1153,62 @@ type FSharperTreeBuilder() =
             |> Seq.map this.VisitInterfaceDeclaration
             |> Seq.toList
             |> List.map Structure.Interface
+
+        let enums =
+            node.ChildNodes().OfType<EnumDeclarationSyntax>()
+            |> Seq.map this.VisitEnumDeclaration
+            |> Seq.toList
+            |> List.map Structure.E        
             
         {
             Namespace.Name = node.Name.WithoutTrivia().ToFullString()
-            Namespace.Structures = interfaces @ classes
+            Namespace.Structures = interfaces @ classes @ enums
         } 
 
+    member this.VisitEnumDeclaration(node:EnumDeclarationSyntax) =
+        let attrs = 
+            node.AttributeLists
+            |> Seq.collect (fun x -> 
+                x.Attributes 
+                |> Seq.map (fun x -> 
+                    let attributesValues = 
+                        x.ArgumentList
+                        |> Option.ofObj
+                        |> Option.map (fun x -> x.Arguments)
+                        |> (Option.toList >> List.toSeq >> Seq.concat)
+                        |> Seq.map (fun y -> 
+
+                            if isNull y.NameEquals then 
+                                CSharpStatementWalker.ParseChsarpNode y.Expression |>  AttributeValue
+                            else 
+                                NamedAttributeValue 
+                                    (CSharpStatementWalker.ParseChsarpNode y.NameEquals.Name, 
+                                    CSharpStatementWalker.ParseChsarpNode y.Expression) )
+                        |> Seq.toList
+                        
+                    {
+                        Attribute.Name = x.Name.WithoutTrivia().ToFullString()
+                        Attribute.Parameters = attributesValues 
+                    }
+            ))
+            |> Seq.toList
+        
+        let enumMembers =
+             node.Members
+             |> Seq.map this.VisitEnumMemberDeclaration
+             |> Seq.toList                            
+        let e = {
+            Enum.Name = node.Identifier.ValueText
+            Members = enumMembers
+            Attributes = attrs
+        } 
+        e   
+        
+    member this.VisitEnumMemberDeclaration(node:EnumMemberDeclarationSyntax) =
+        let nodeValueExpr = CSharpStatementWalker.ParseChsarpNode node.EqualsValue.Value
+        let theMember = EnumMemberValue (node.Identifier.ValueText, nodeValueExpr)
+        theMember 
+        
 
     member this.VisitInterfaceDeclaration(node:InterfaceDeclarationSyntax) =    
 
@@ -1491,6 +1550,7 @@ type FSharperTreeBuilder() =
             | :? ClassDeclarationSyntax as x -> x |> this.VisitClassDeclaration |> List.map C  |> Structures
             | :? FieldDeclarationSyntax as x -> x |> this.VisitFieldDeclaration |> fieldToClass |> C |> List.singleton |> Structures
             | :? PropertyDeclarationSyntax as x -> x |> this.VisitPropertyDeclaration |>  propertyToClass |> C |> List.singleton |> Structures
+            | :? EnumDeclarationSyntax as x -> x |> this.VisitEnumDeclaration |> E |> List.singleton |> Structures
             //| x -> printfn "Skipping element: %A" <| x.Kind(); Empty
 
         match tree with 

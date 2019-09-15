@@ -518,9 +518,79 @@ module FormatOuput =
         |> List.singleton
         |> (fun x -> SynModuleDecl.Types (x, range0))
 
+    let toEnum (enum: Enum) =  
+        let createEnumCase name synConst = 
+            EnumCase(
+                (* SynAttributes *) 
+                SynAttributes.Empty,
+                (* ident:Ident *) 
+                toSingleIdent name,
+                (* SynConst *) 
+                synConst,
+                (* PreXmlDoc *) 
+                PreXmlDoc.Empty,
+                (* range:range *) 
+                range0
+        )
+
+        let enumCases = 
+            enum.Members
+            |> List.choose (fun (name, expr) -> 
+                match toSynExpr expr with
+                | SynExpr.Const(synConst, _) -> createEnumCase name synConst |> Some
+                | _ -> None )
+
+        let theEnum: SynTypeDefnSimpleRepr = 
+            SynTypeDefnSimpleRepr.Enum(
+                (* SynEnumCases *)
+                enumCases,
+                (* range *) 
+                range0
+        )
+
+        let att = 
+            enum.Attributes |> List.map (fun x -> 
+                let arg = 
+                    match x.Parameters with
+                    | [] -> SynExpr.Paren (SynExpr.Ident (Ident("",range0)), range0, None, range0) 
+                    | xs -> 
+
+                        let items = xs |> List.map (function
+                            | AttributeValue.AttributeValue x -> toSynExpr x
+                            | AttributeValue.NamedAttributeValue (left, right) -> 
+                                let left = toSynExpr left
+                                let right = toSynExpr right
+                                
+                                let infixEquals = 
+                                    SynExpr.App
+                                        (ExprAtomicFlag.NonAtomic, true, toSingleIdent "op_Equality" |> SynExpr.Ident, left, range0)
+
+                                SynExpr.App (ExprAtomicFlag.NonAtomic, false, infixEquals, right, range0)
+                        )
+                      
+                        let tuple = 
+                            SynExpr.Tuple (items, [], range0)
+
+                        SynExpr.Paren (tuple, range0, None, range0) 
+
+                {
+                    SynAttribute.TypeName = LongIdentWithDots (toIdent x.Name, [range0])
+                    SynAttribute.ArgExpr = arg
+                    SynAttribute.AppliesToGetterAndSetter = false
+                    SynAttribute.Range = range0
+                    SynAttribute.Target = None
+                }
+            )
+
+        let info = ComponentInfo (att, [], [], (toIdent enum.Name), PreXmlDocEmpty, false, None, range0)
+        let model = SynTypeDefnRepr.Simple (theEnum, range0)
+        let typeDef = TypeDefn (info, model, [], range0) 
+        SynModuleDecl.Types ([typeDef], range0)
+
     let parseStructure = function
         | C c -> toClass c
         | Interface (name, methods) -> (name,methods) |> toInterface |> (fun xs -> SynModuleDecl.Types ([xs], range0)) 
+        | E e -> toEnum e
 
 let toFsharpSynaxTree input =
 
@@ -625,7 +695,7 @@ let runWithConfig validateCode (input:string) =
             {
                 FormatConfig.Default with 
                     FormatConfig.SemicolonAtEndOfLine = false
-                    FormatConfig.StrictMode = false
+                    FormatConfig.StrictMode = true
                     FormatConfig.PageWidth = 120
                     FormatConfig.SpaceAfterComma = true
                     FormatConfig.SpaceBeforeArgument = true
@@ -652,7 +722,8 @@ let runWithConfig validateCode (input:string) =
                     | :? NamespaceDeclarationSyntax
                     | :? MethodDeclarationSyntax 
                     | :? InterfaceDeclarationSyntax
-                    | :? ClassDeclarationSyntax -> true
+                    | :? ClassDeclarationSyntax 
+                    | :? EnumDeclarationSyntax -> true
                     | _ -> false )
 
             if t.GetDiagnostics() |> Seq.isEmpty && hasValidNode then Some x
