@@ -1146,7 +1146,6 @@ type FSharperTreeBuilder() =
             node.ChildNodes().OfType<ClassDeclarationSyntax>()
             |> Seq.collect this.VisitClassDeclaration
             |> Seq.toList
-            |> List.map Structure.C
 
         let interfaces = 
             node.ChildNodes().OfType<InterfaceDeclarationSyntax>()
@@ -1194,21 +1193,25 @@ type FSharperTreeBuilder() =
             |> Seq.toList
         
         let enumMembers =
-             node.Members
-             |> Seq.map this.VisitEnumMemberDeclaration
-             |> Seq.toList                            
-        let e = {
+            node.Members
+            |> Seq.collect this.VisitEnumMemberDeclaration
+            |> Seq.toList        
+
+        {
             Enum.Name = node.Identifier.ValueText
             Members = enumMembers
             Attributes = attrs
         } 
-        e   
         
     member this.VisitEnumMemberDeclaration(node:EnumMemberDeclarationSyntax) =
-        let nodeValueExpr = CSharpStatementWalker.ParseChsarpNode node.EqualsValue.Value
-        let theMember = EnumMemberValue (node.Identifier.ValueText, nodeValueExpr)
-        theMember 
         
+        node.EqualsValue  // TODO: this neeeds more work. When null it is producing an invalid F# syntax tree
+        |> Option.ofObj
+        |> Option.map (fun x -> 
+            let nodeValueExpr = CSharpStatementWalker.ParseChsarpNode x.Value
+            EnumMemberValue (node.Identifier.ValueText, nodeValueExpr) )
+        |> Option.toList
+
 
     member this.VisitInterfaceDeclaration(node:InterfaceDeclarationSyntax) =    
 
@@ -1243,7 +1246,7 @@ type FSharperTreeBuilder() =
                 ) |> Seq.toList
         (node.Identifier.WithoutTrivia().Text |> toSingleIdent, members)
 
-    member this.VisitClassDeclaration(node:ClassDeclarationSyntax ): Class list =
+    member this.VisitClassDeclaration(node:ClassDeclarationSyntax ): Structure list =
 
         let attrs = 
             node.AttributeLists
@@ -1345,18 +1348,26 @@ type FSharperTreeBuilder() =
             |> Seq.collect this.VisitClassDeclaration
             |> Seq.toList
 
-        let klass = {
-            Name = { ClassName.Name = node.Identifier.ValueText; Generics = [] }
-            ImplementInterfaces = baseTypes |> Option.map (snd) |> Option.toList |> List.concat
-            BaseClass = baseTypes |> Option.bind fst
-            Constructors = ctors
-            Fields = (fields |> List.filter (fun x -> not x.IsPublic)) // public fields are not a thing in F#
-            Methods = methods
-            Properties = properties @ publicFields
-            TypeParameters = typeParameters
-            Attributes = attrs  }
+        let innnerEnums =
+            node.ChildNodes().OfType<EnumDeclarationSyntax>()
+            |> Seq.map this.VisitEnumDeclaration
+            |> Seq.toList
+            |> List.map E // Convert to structure type (being that of enum)
 
-        innerClasses @ [klass]
+        let klass = 
+            {
+                Name = { ClassName.Name = node.Identifier.ValueText; Generics = [] }
+                ImplementInterfaces = baseTypes |> Option.map (snd) |> Option.toList |> List.concat
+                BaseClass = baseTypes |> Option.bind fst
+                Constructors = ctors
+                Fields = (fields |> List.filter (fun x -> not x.IsPublic)) // public fields are not a thing in F#
+                Methods = methods
+                Properties = properties @ publicFields
+                TypeParameters = typeParameters
+                Attributes = attrs  
+            } |> C // Convert to structure type (being that of a class)
+
+        innnerEnums @ innerClasses @ [klass]
 
 
     member this.VisitConstructorDeclaration (node:ConstructorDeclarationSyntax) = 
@@ -1547,7 +1558,7 @@ type FSharperTreeBuilder() =
             | :? NamespaceDeclarationSyntax as x -> x |> this.VisitNamespaceDeclaration |> Namespace
             | :? MethodDeclarationSyntax as x -> x |> this.VisitMethodDeclaration |> methodToClass |> C |> List.singleton |> Structures
             | :? InterfaceDeclarationSyntax as x -> x |> this.VisitInterfaceDeclaration |> Interface |> List.singleton |> Structures
-            | :? ClassDeclarationSyntax as x -> x |> this.VisitClassDeclaration |> List.map C  |> Structures
+            | :? ClassDeclarationSyntax as x -> x |> this.VisitClassDeclaration |> Structures
             | :? FieldDeclarationSyntax as x -> x |> this.VisitFieldDeclaration |> fieldToClass |> C |> List.singleton |> Structures
             | :? PropertyDeclarationSyntax as x -> x |> this.VisitPropertyDeclaration |>  propertyToClass |> C |> List.singleton |> Structures
             | :? EnumDeclarationSyntax as x -> x |> this.VisitEnumDeclaration |> E |> List.singleton |> Structures

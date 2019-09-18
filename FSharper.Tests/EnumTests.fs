@@ -133,3 +133,34 @@ type EnumTests () =
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
+
+    [<Test>]
+    member this.``Enum nested in a class`` () = 
+        let csharp = 
+                 """class Program 
+                    {
+                        enum Days {
+                            Sun = 0,
+                            Mon = 1
+                        };
+                     
+                        static void Main(string[] args) 
+                        {
+                            Console.Write(Days.Sun); 
+                            Console.ReadKey();
+                        }
+                    }"""
+                
+        let fsharp = 
+                 """type Days =
+                    | Sun = 0
+                    | Mon = 1
+
+                type Program() =
+                    static member Main(args: string []) =
+                        Console.Write(Days.Sun)
+                        Console.ReadKey()"""
+                               
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
