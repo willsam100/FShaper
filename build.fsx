@@ -15,13 +15,23 @@ Target.initEnvironment()
 
 let solutionFile = "FSharper.sln"
 let fshaperProject = "FSharper.Core/FSharper.Core.fsproj"
-let fshaperTestsProject = "FSharper.Tests.fsproj"
-let testsProjectDir = "FSharper.Tests"
+let fshaperTestsProject = "FSharper.Tests/FSharper.Tests.fsproj"
 
-// Lazily install DotNet SDK in the correct version if not available
-let install = lazy DotNet.install DotNet.Versions.Release_2_1_302
+// On OSX there is a bug running the tests. Requires this version of dotnet to run correctly.
+let Release_2_1_505 (option: DotNet.CliInstallOptions) =
+    { option with
+        InstallerOptions = (fun io ->
+            { io with
+                Branch = "release/2.1"
+            })
+        Channel = None
+        Version = DotNet.CliVersion.Version "2.1.505"
+    }
 
-// Set general properties without arguments
+// // Lazily install DotNet SDK in the correct version if not available
+let install = lazy DotNet.install Release_2_1_505
+
+// // Set general properties without arguments
 let inline dotnetSimple arg = DotNet.Options.lift install.Value arg
 
 let inline withWorkDir wd =
@@ -36,9 +46,7 @@ Target.create "Clean" (fun _ ->
 
 Target.create "Restore" (fun _ -> DotNet.restore dotnetSimple solutionFile )
 Target.create "Build" (fun _ -> DotNet.build dotnetSimple solutionFile )
-Target.create "Test" (fun _ -> 
-  System.IO.Directory.SetCurrentDirectory testsProjectDir
-  DotNet.test id fshaperTestsProject)
+Target.create "Test" (fun _ -> DotNet.test dotnetSimple fshaperTestsProject)
 
 Target.create "All" ignore
 
