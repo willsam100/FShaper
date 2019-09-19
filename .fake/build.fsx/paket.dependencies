@@ -1,0 +1,7 @@
+framework: netstandard2.0
+source https://api.nuget.org/v3/index.json
+storage: none
+
+nuget FSharp.Core 4.6.0.0
+nuget Fake.Core.Target
+nuget Fake.DotNet.Cli //

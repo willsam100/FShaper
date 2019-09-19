@@ -1,0 +1,6 @@
+/Users/sam.williams/projects/CsToFs/build.fsx (21,50)-(21,65): Error FS0039: The value, constructor, namespace or type 'Release_2_1_505' is not defined. Maybe you want one of the following:
+   Release_2_1_300
+   Release_2_1_301
+   Release_2_1_302
+   Release_2_1_400
+   Release_2_1_401

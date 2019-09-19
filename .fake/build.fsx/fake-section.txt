@@ -1,0 +1,1 @@
+paket: scriptpath:///.fake/build.fsx/paket.dependencies, <null>, paket-inline
