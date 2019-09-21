@@ -549,6 +549,7 @@ module TreeOps =
         tree |> replaceExpr replaceLetRootWithReturn |> replaceExpr walker
 
     let shouldWrapInComp tree = 
+
         ParserUtil.containsExpr (function 
             | Expr.YieldOrReturn ((_,_), _) as x -> true
             | Expr.DoBang (_) -> true
@@ -570,8 +571,12 @@ module TreeOps =
 
 
     let replaceDotGetIfNotInLetBinding tree = 
+        let isLastExpressionUnit = 
+            containsExpr (function 
+                | Expr.Const SynConst.Unit -> true
+                | _ -> false)
 
-        let rec walker tree = 
+        let walker tree = 
             match tree with
             | Expr.DotGet (a,b) -> 
                 match a with 
@@ -584,7 +589,9 @@ module TreeOps =
             | Expr.Sequential (s1,s2,s3,s4) -> 
                 match s3 with 
                 | Expr.IfThenElse (x,y,z,i,j) when Option.isNone z ->
-                    Expr.IfThenElse (x,y, Some s4, i, j) |> Some
+                    match isLastExpressionUnit y with 
+                    | true -> Expr.IfThenElse (x,y, Some s4, i, j) |> Some
+                    | false -> None
                 | _ -> None
             | _ -> None
         replaceExpr walker tree

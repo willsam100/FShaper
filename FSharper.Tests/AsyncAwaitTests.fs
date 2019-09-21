@@ -117,6 +117,33 @@ type AsyncAwaitTests () =
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
 
+    [<Test>]
+    member this.``can convert if statements without else and additonal statements in async method`` () = 
+        let csharp = 
+             """protected async void OnGetViewControlAsync (CancellationToken token, DocumentViewContent view)
+        		{
+        			if (globalOptions == null) {
+        				OnConfigurationZoomLevelChanged (null, EventArgs.Empty);
+        			}
+
+        			// Content providers can provide additional content
+        			NotifyContentChanged ();
+        			await Load (false);
+        		}"""
+
+        let fsharp = 
+             """member this.OnGetViewControlAsync(token: CancellationToken, view: DocumentViewContent) =
+                    async {
+                        if globalOptions = null then OnConfigurationZoomLevelChanged(null, EventArgs.Empty)
+                        NotifyContentChanged()
+                        do! Load(false) |> Async.AwaitTask
+                    }
+                    |> Async.StartAsTask"""
+                   
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)
+
 
     // [<Test>]
     // member this.``return keyword is added with if statement`` () = 

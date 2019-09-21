@@ -113,15 +113,14 @@ type LoopngTests () =
                     let mutable i = Unchecked.defaultof<int>
                     let mutable j = Unchecked.defaultof<int>
                     if n < 0 || n > 63 then System.Environment.Exit(0)
-                    else
-                        i <- 0
-                        c.[i] <- 1L
-                        for i = 0 to (n - 1) do
-                            j <- i
-                            c.[1 + j] <- 1L
-                            for j = i downto 1 do
-                                c.[j] <- c.[j - 1] - c.[j]
-                            c.[0] <- -c.[0]"""
+                    i <- 0
+                    c.[i] <- 1L
+                    for i = 0 to (n - 1) do
+                        j <- i
+                        c.[1 + j] <- 1L
+                        for j = i downto 1 do
+                            c.[j] <- c.[j - 1] - c.[j]
+                        c.[0] <- -c.[0]"""
                    
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
