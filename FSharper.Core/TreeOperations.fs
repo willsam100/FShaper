@@ -263,8 +263,7 @@ module ParserUtil =
             | :? GenericNameSyntax as genericName -> 
                 let typeArgs = 
                     genericName.TypeArgumentList.Arguments
-                    |> Seq.map (fun x -> x.WithoutTrivia().ToString())
-                    |> Seq.map (toLongIdentWithDots >> SynType.LongIdent)
+                    |> Seq.map parseType
                     |> Seq.toList
 
                 let x = genericName.Identifier.WithoutTrivia().ToFullString() |> fixKeywords |> toLongIdentWithDots |> SynType.LongIdent

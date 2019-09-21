@@ -515,9 +515,16 @@ module TreeOps =
             | Expr.LongIdent (a, b) when (joinLongIdentWithDots b).StartsWith "@" -> Expr.LongIdent (a, (joinLongIdentWithDots b).Substring(1) |> toLongIdentWithDots) |> Some
             | e -> None) tree
 
-    let replaceAsyncOps tree = 
+    let replaceAsyncOps returnType tree = 
         let awaitTask expr = 
             ExprOps.toInfixApp (expr) (toLongIdent "op_PipeRight") (toLongIdent "Async.AwaitTask")
+
+        let requiresReturnKeyword = 
+            match returnType with 
+            | SynType.App ((SynType.LongIdent longIdent),b,args,d, e,f,g) -> 
+                let name = longIdent |> joinLongIdentWithDots
+                name = "Task" && args |> List.isEmpty |> not
+            | _ -> false
 
         let rec walker = function
             | Expr.DoBang _ as expr -> expr |> awaitTask |> Some
@@ -537,16 +544,27 @@ module TreeOps =
 
         let rec replaceLetRootWithReturn = function 
             | Expr.LetOrUse (a,b,c, Expr.LetOrUse (e,f,g,h)) ->  
-                let d = replaceExpr replaceLetRootWithReturn (Expr.LetOrUse (e,f,g,h))
-                Expr.LetOrUse (a,b,c,d) |> Some
+                let d = replaceLetRootWithReturn (Expr.LetOrUse (e,f,g,h))
+                Expr.LetOrUse (a,b,c,d)
             | Expr.LetOrUse (a,b,c, Expr.LetOrUseBang (d,e,f,g,h,i)) ->  
-                let d = replaceExpr replaceLetRootWithReturn (Expr.LetOrUseBang (d,e,f,g,h,i))
-                Expr.LetOrUse (a,b,c,d) |> Some
+                let d = replaceLetRootWithReturn (Expr.LetOrUseBang (d,e,f,g,h,i))
+                Expr.LetOrUse (a,b,c,d)
             | Expr.LetOrUse (a,b,c, d) ->  
-                Expr.LetOrUse (a,b,c,Expr.YieldOrReturn ((false, true), d)) |> Some
-            | _ -> None
+                Expr.LetOrUse (a,b,c,Expr.YieldOrReturn ((false, true), d))
+            | Expr.LetOrUseBang (a,b,c,d,e,f) -> 
+                Expr.LetOrUseBang (a,b,c,d,e, replaceLetRootWithReturn f)
+            | Expr.Sequential (a,b,c,d) -> 
+                Expr.Sequential (a,b,c, replaceLetRootWithReturn d)
+            | e -> Expr.YieldOrReturn ((false, true), e)
 
-        tree |> replaceExpr replaceLetRootWithReturn |> replaceExpr walker
+        let handleReturnKeyword e = 
+            match requiresReturnKeyword with 
+            | true ->  replaceLetRootWithReturn e
+            | false -> e 
+                        
+        tree 
+        |> replaceExpr walker
+        |> handleReturnKeyword
 
     let shouldWrapInComp tree = 
 
@@ -562,11 +580,11 @@ module TreeOps =
         | [Expr.LetOrUseBang (_)] -> Some CompExpr.Async
         | _ -> None
 
-    let wrapInComp name e = 
+    let wrapInComp returnType name e = 
         let toComp name expr =
             ExprOps.toApp (toLongIdent name) (Expr.CompExpr (false, ref false, expr))
         match name with
-        | CompExpr.Async -> ExprOps.toInfixApp (e |> replaceAsyncOps |> toComp "async") (toLongIdent "op_PipeRight") (toLongIdent "Async.StartAsTask")
+        | CompExpr.Async -> ExprOps.toInfixApp (e |> replaceAsyncOps returnType |> toComp "async") (toLongIdent "op_PipeRight") (toLongIdent "Async.StartAsTask")
         | CompExpr.Seq -> toComp "seq" e
 
 

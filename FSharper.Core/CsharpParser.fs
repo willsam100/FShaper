@@ -11,7 +11,6 @@ open Microsoft.FSharp.Compiler
 open Microsoft.FSharp.Compiler.Range
 open System.Threading
         
-
 [<AutoOpen>]
 module SimpleFormatter = 
 

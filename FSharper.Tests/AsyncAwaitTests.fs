@@ -145,28 +145,30 @@ type AsyncAwaitTests () =
         |> should equal (formatFsharp fsharp)
 
 
-    // [<Test>]
-    // member this.``return keyword is added with if statement`` () = 
-    //     let csharp = 
-    //          """public async Task<ActionResult<TodoItem>> GetTodoItem(long id)
-    //             {
-    //                 var todoItem = await _context.TodoItems.FindAsync(id);
+    [<Test>]
+    member this.``return keyword is added with if statement`` () = 
+        let csharp = 
+             """public async Task<ActionResult<TodoItem>> GetTodoItem(long id)
+                {
+                    var todoItem = await _context.TodoItems.FindAsync(id);
 
-    //                 if (todoItem == null)
-    //                 {
-    //                     return NotFound();
-    //                 }
+                    if (todoItem == null)
+                    {
+                        return NotFound();
+                    }
 
-    //                 return todoItem;
-    //             }"""
+                    return todoItem;
+                }"""
     
-    //     let fsharp = 
-    //          """member this.GetTodoItem(id: int64): : Task<ActionResult<TodoItem>> = 
-    //                 async {
-    //                     let! todoItem = _context.TodoItems.FindAsync(id) |> Async.AwaitTask
-    //                     return if todoItem = null then NotFound() else todoItem
-    //                 } |> Async.StartAsTask"""
+        let fsharp = 
+             """member this.GetTodoItem(id: int64): Task<ActionResult<TodoItem>> =
+                    async {
+                        let! todoItem = _context.TodoItems.FindAsync(id) |> Async.AwaitTask
+                        return if todoItem = null then NotFound()
+                               else todoItem
+                    }
+                    |> Async.StartAsTask"""
                    
-    //     csharp |> Converter.run 
-    //     |> (fun x -> printfn "%s" x; x)
-    //     |> should equal (formatFsharp fsharp)
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)

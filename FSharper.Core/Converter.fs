@@ -52,7 +52,7 @@ module FormatOuput =
             Attributes = []
         }
 
-    let santizeCode methodNames expr = 
+    let santizeCode requiresReturn methodNames expr = 
 
         let e = 
             expr
@@ -66,7 +66,7 @@ module FormatOuput =
             |> fixCsharpReservedNames
             |> rewriteActionOrFuncToUseCallInvoke
         match shouldWrapInComp e with 
-        | Some x ->  wrapInComp x e
+        | Some x ->  wrapInComp requiresReturn x e
         | None -> e
 
     let toMethod methodNames (x:Method) = 
@@ -102,13 +102,14 @@ module FormatOuput =
                 }
             )
 
+        let returnType = SynBindingReturnInfo.SynBindingReturnInfo (x.ReturnType, range0, [])
+
         let trandformedTree = 
-            let t = santizeCode methodNames x.Body
+            let t = santizeCode x.ReturnType methodNames x.Body
             match x.ReturnType with 
             | SynType.LongIdent (x) when joinLongIdentWithDots x = "unit" -> t
             | _ ->  Expr.Typed (t, x.ReturnType)
 
-        let returnType = SynBindingReturnInfo.SynBindingReturnInfo (x.ReturnType, range0, [])
 
         SynMemberDefn.Member 
             (SynBinding.Binding ( x.Accessibility, SynBindingKind.NormalBinding, false, false, attributres,
@@ -147,11 +148,10 @@ module FormatOuput =
                 MemberFlags.IsOverrideOrExplicitImpl = false
                 MemberFlags.IsInstance = true
                 MemberFlags.MemberKind = MemberKind.PropertyGetSet
-
             }
 
         let makeGetter getter = 
-            let getter = santizeCode [] getter
+            let getter = santizeCode x.Type [] getter
         
             let memberOptions = 
                 {   
@@ -172,7 +172,7 @@ module FormatOuput =
                                 [SynPat.Paren (SynPat.Const (SynConst.Unit, range0), range0  )]),
                                 None, range0)
 
-            let returnInfo = SynBindingReturnInfo (toLongIdentWithDots x.Name |> SynType.LongIdent , range0, [])
+            let returnInfo = SynBindingReturnInfo (x.Type, range0, [])
 
             SynMemberDefn.Member (
                 SynBinding.Binding
@@ -180,7 +180,7 @@ module FormatOuput =
                         PreXmlDocEmpty, SynValData (Some memberOptions, synVaInfo, None), headPat, Some returnInfo, getter |> toSynExpr, range0, NoSequencePointAtInvisibleBinding), range0)   
 
         let makeSetter setter = 
-            let setter = santizeCode [] setter
+            let setter = santizeCode x.Type [] setter
             let memberOptions = 
                 {   
                     IsInstance = true
