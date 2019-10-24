@@ -90,9 +90,8 @@ type CSharpStatementWalker() =
                         //let app = Expr.TypeApp (app, [SynType.Anon range0])
                         //Expr.App (ExprAtomicFlag.Atomic, false, app, Expr.Paren right)
                     | _ -> 
-                        let addOp = PrettyNaming.CompileOpName "-"
-                        Expr.App (ExprAtomicFlag.NonAtomic, false, 
-                            Expr.App(ExprAtomicFlag.NonAtomic, true, Expr.Ident addOp, identSetToIdentGet left), r) 
+                        let addOp = PrettyNaming.CompileOpName "-" |> Expr.Ident
+                        ExprOps.toInfixApp (identSetToIdentGet left) addOp r
                 else r
 
             match left with 
@@ -127,9 +126,7 @@ type CSharpStatementWalker() =
                     Expr.App (ExprAtomicFlag.Atomic, false, app, Expr.Paren right)
                 | _ -> 
                     let addOp = PrettyNaming.CompileOpName "+"
-                    let add = 
-                        Expr.App (ExprAtomicFlag.NonAtomic, false, 
-                            Expr.App(ExprAtomicFlag.NonAtomic, true, Expr.Ident addOp, left), right) 
+                    let add = ExprOps.toInfixApp left (Expr.Ident addOp) right
                     Expr.Set (left, add)
             else
                 Expr.Set (left, right)
@@ -444,9 +441,12 @@ type CSharpStatementWalker() =
         | :? ForStatementSyntax as x -> 
 
             let replaceCastToInt node = 
-                node |> replaceExpr  (function 
-                            | Expr.Downcast (e, _) -> Expr.App (ExprAtomicFlag.NonAtomic, false, toLongIdent "int", e) |> Some
-                            | _ -> None)
+                node 
+                |> replaceExpr  
+                    (function 
+                        | Expr.Downcast (e, _) -> 
+                            ExprOps.toApp (toLongIdent "int") e |> Some
+                        | _ -> None)
 
             let varAndstartValue = 
                 x.Declaration 
@@ -690,8 +690,6 @@ type CSharpStatementWalker() =
             Expr.LongIdent (false, ident)
 
     static member ParseChsarpNode (node:CSharpSyntaxNode):Expr = 
-
-
         match node with 
 
         | null -> Expr.Null
@@ -706,7 +704,7 @@ type CSharpStatementWalker() =
         | :? ArrowExpressionClauseSyntax as x -> x.Expression |> CSharpStatementWalker.ParseExpression
         | :? AttributeArgumentListSyntax as x -> 
             x.Arguments |> Seq.toList 
-            |> List.map (fun x -> CSharpStatementWalker.ParseChsarpNode x)
+            |> List.map CSharpStatementWalker.ParseChsarpNode
             |> Expr.Tuple 
             |> Expr.Paren
 
@@ -847,15 +845,13 @@ type CSharpStatementWalker() =
 
                 match operatorToken with
                 | Some op ->
-                    let app = Expr.App (ExprAtomicFlag.NonAtomic, false, Expr.App (ExprAtomicFlag.NonAtomic, true, Expr.Ident op,toLongIdent operand), 1 |> SynConst.Int32 |> Expr.Const)
+                    let app =  ExprOps.toInfixApp (toLongIdent operand) (Expr.Ident op) (1 |> SynConst.Int32 |> Expr.Const)
                     let assign = Expr.LongIdentSet (toLongIdentWithDots operand, app)
                     Expr.Sequential(SequencePointInfoForSeq.SequencePointsAtSeq, false, assign, toLongIdent operand)
-                | None -> 
-                    Expr.App(ExprAtomicFlag.NonAtomic, false, operator, toLongIdent operand)
+                | None -> ExprOps.toApp operator (toLongIdent operand)
             ) |> function 
             | Some x -> x
-            | None -> 
-                Expr.App(ExprAtomicFlag.NonAtomic, false, operator, CSharpStatementWalker.ParseExpression operand)
+            | None -> ExprOps.toApp  operator (CSharpStatementWalker.ParseExpression operand)
 
         match node with
         | :? IsPatternExpressionSyntax as x -> 
@@ -941,7 +937,7 @@ type CSharpStatementWalker() =
             let init = CSharpStatementWalker.ParseExpression x.Initializer
 
             let typeApp = Expr.TypeApp (toLongIdent "Array.zeroCreate", [t] )
-            Expr.App (ExprAtomicFlag.NonAtomic, false, typeApp, Expr.Paren size)
+            ExprOps.toApp typeApp (Expr.Paren size)
             
         | :? AssignmentExpressionSyntax as x -> x |> CSharpStatementWalker.ParseAssignmentExpressionSyntax
         | :? AwaitExpressionSyntax as x -> 
@@ -990,9 +986,7 @@ type CSharpStatementWalker() =
             |> Seq.map (CSharpStatementWalker.ParseExpression >> (fun x -> 
                 match x with 
                 | Expr.LongIdentSet (LongIdentWithDots ([ident], _), value) -> 
-                    Expr.App (ExprAtomicFlag.NonAtomic, false, 
-                                Expr.App (ExprAtomicFlag.NonAtomic, true, Expr.Ident "op_Equality", Expr.Ident ident.idText),
-                                value) 
+                    ExprOps.toInfixApp (Expr.Ident ident.idText) (Expr.Ident "op_Equality") value
                 | _ -> x))
             |> Seq.toList
             |> sequential
@@ -1004,7 +998,7 @@ type CSharpStatementWalker() =
 
             let args = 
                 x.Contents 
-                |> Seq.map (fun x -> CSharpStatementWalker.ParseInterpolatedStringContentSyntax x) 
+                |> Seq.map CSharpStatementWalker.ParseInterpolatedStringContentSyntax
                 |> Seq.toList
 
             let stringFormat = 
@@ -1015,7 +1009,7 @@ type CSharpStatementWalker() =
             let args = args |> List.choose (function Expr.Paren _ as e -> Some e | _ -> None)
 
             (toLongIdent "sprintf" :: (Expr.Const (SynConst.String (stringFormat, range0))) :: args)
-            |> List.reduce (fun a b -> Expr.App (ExprAtomicFlag.NonAtomic, false, a, b) )
+            |> List.reduce ExprOps.toApp
         | :? InvocationExpressionSyntax as x -> 
         
             let args =  
@@ -1026,7 +1020,7 @@ type CSharpStatementWalker() =
                 |> Expr.Paren
 
             let expr = x.Expression |> CSharpStatementWalker.ParseExpression
-            Expr.App (ExprAtomicFlag.Atomic, false, expr, args)
+            ExprOps.toApp expr args
 
         //| :? IsPatternExpressionSyntax as x -> ()
         | :? LiteralExpressionSyntax as x -> 
@@ -1096,7 +1090,7 @@ type CSharpStatementWalker() =
         | :? PrefixUnaryExpressionSyntax as x -> 
             match x.Kind() with 
             | SyntaxKind.LogicalNotExpression -> 
-                Expr.App(ExprAtomicFlag.NonAtomic, false, PrettyNaming.CompileOpName "not" |> Expr.Ident, x.Operand |> CSharpStatementWalker.ParseExpression)
+                ExprOps.toApp (PrettyNaming.CompileOpName "not" |> Expr.Ident) (x.Operand |> CSharpStatementWalker.ParseExpression)
             | _ -> 
                 parsePrefixNode x.Operand x.OperatorToken
 
@@ -1110,9 +1104,7 @@ type CSharpStatementWalker() =
         //| :? ThrowExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "ThrowExpressionSyntax"
         //| :? TupleExpressionSyntax as x -> (fun () -> x.WithoutTrivia().ToFullString() |> toLongIdent) |> debugFormat "TupleExpressionSyntax"
         | :? TypeOfExpressionSyntax as x -> 
-
-            let ident = x.Type |> ParserUtil.parseType |> List.singleton
-            printfn "%A" ident
+            let ident = x.Type |> parseType |> List.singleton
             Expr.TypeApp (Expr.Ident "typeof", ident)
 
         | :? TypeSyntax as x -> 

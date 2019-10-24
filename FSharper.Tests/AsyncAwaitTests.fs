@@ -172,3 +172,22 @@ type AsyncAwaitTests () =
         csharp |> Converter.run 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
+
+    // At first this test seemed like a good idea. It turns out that is would be nothing more than `find and replace` since 
+    // there isn't a way to kwno the foo() returns a task. For this reason the test is left commented out. 
+    // The resulting code should still compile under F# (and possbile deadlock because it's bad in C# and F#). 
+    // [<Test>]
+    // member this.``C result is translated to Async.RunSynchronously`` () =
+    //     let csharp = 
+    //          """public int Foo()
+    //             {
+    //                 return foo().Result;
+    //             }"""
+    
+    //     let fsharp = 
+    //          """member this.Foo(): int =
+    //                 foo() |> Async.RunSynchronously"""
+                   
+    //     csharp |> Converter.run 
+    //     |> (fun x -> printfn "%s" x; x)
+    //     |> should equal (formatFsharp fsharp)
