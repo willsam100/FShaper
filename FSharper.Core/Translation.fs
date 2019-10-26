@@ -275,8 +275,7 @@ module TreeOps =
         | Expr.App (isAtomic, isInfix, Expr.App (_, true, (Expr.Ident "op_BooleanOr"), left), right) when containsCsharpIsMatch left  ->
             let left' = left |> convertLogicalOrToLogicalAnd |> logicalNegateExpr
             let right' = right |> convertLogicalOrToLogicalAnd |> logicalNegateExpr
-            let e = Expr.App (isAtomic, isInfix, Expr.App (isAtomic, true, (Expr.Ident "op_BooleanAnd"), left'), right') |> Expr.Paren
-            Expr.App(isAtomic, false, Expr.Ident "not", e)
+            ExprOps.toApp (Expr.Ident "not") (ExprOps.toInfixApp left' (Expr.Ident "op_BooleanAnd") right' |> Expr.Paren)
 
         | Expr.App (isAtomic, isInfix, Expr.App (_, true, (Expr.Ident "op_BooleanOr"), left), right) ->
             let right' = right |> convertLogicalOrToLogicalAnd

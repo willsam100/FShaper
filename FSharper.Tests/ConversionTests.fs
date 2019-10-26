@@ -1104,4 +1104,37 @@ type ConversionTests () =
                 ()"""
         csharp |> Converter.runWithConfig false 
         |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)      
+        |> should equal (formatFsharp fsharp)   
+
+
+    [<Test>]
+    member this.``coalescing operator handles assignment`` () = 
+        let csharp = 
+             """public Foo GetFoobar ()
+        		{
+        			return fooBar ?? (fooBar = CreateFoo());
+        		}"""
+    
+        let fsharp = 
+             """member this.GetFoobar(): Foo =
+                    if fooBar = null then fooBar <- CreateFoo()
+                    fooBar"""
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)   
+
+    [<Test>]
+    member this.``double question mark operator`` () = 
+        let csharp = 
+             """public Foo GetFoobar ()
+        		{
+        			return fooBar ?? (fooBar = CreateFoo());
+        		}"""
+    
+        let fsharp = 
+             """member this.GetFoobar(): Foo =
+                    if fooBar = null then fooBar <- CreateFoo()
+                    fooBar"""
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)              

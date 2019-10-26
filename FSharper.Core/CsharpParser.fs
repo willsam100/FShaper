@@ -199,11 +199,28 @@ type CSharpStatementWalker() =
             Expr.Downcast (left, right)
         | SyntaxKind.CoalesceExpression -> 
 
+            // There are two cases to handle here. 
+            // 1) assigment. This is the simple case `x ?? (x = 42)` and means that we can translate to a simple `if x = null then ...; x`
+            // 2) setting a default value. This is actually harder since it can be nested in other statements. An if then 
+            // actually requires two statements so won't be correct. Instead we use the Option and Option.defaultValue which can all be done 
+            // in a single line. 
+
             let (left, right) = parseLeftandRight ()
-            let pipe = PrettyNaming.CompileOpName "|>" |> toLongIdent
-            let defaultValue = ExprOps.toApp (toLongIdent "Option.defaultValue") right
-            let toOptional = ExprOps.toInfixApp left pipe (toLongIdent "Option.ofObj")
-            ExprOps.toInfixApp toOptional pipe defaultValue
+
+            let x = right |> containsExpr (function 
+                | Expr.LongIdentSet _
+                | Expr.Set _ -> true
+                | _ -> false  )
+
+            if x |> List.isEmpty then 
+                let pipe = PrettyNaming.CompileOpName "|>" |> toLongIdent
+                let defaultValue = ExprOps.toApp (toLongIdent "Option.defaultValue") right
+                let toOptional = ExprOps.toInfixApp left pipe (toLongIdent "Option.ofObj")
+                ExprOps.toInfixApp toOptional pipe defaultValue 
+            else             
+                let isNull = ExprOps.toInfixApp left ("=" |> PrettyNaming.CompileOpName |> Expr.Ident) Expr.Null
+                let assign = Expr.IfThenElse (isNull, right, None, NoSequencePointAtLetBinding, false)
+                sequential [assign; left]
 
         | e -> 
             let ident = createErorrCode node
