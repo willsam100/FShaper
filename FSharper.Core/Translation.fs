@@ -586,7 +586,6 @@ module TreeOps =
         | CompExpr.Async -> ExprOps.toInfixApp (e |> replaceAsyncOps returnType |> toComp "async") (toLongIdent "op_PipeRight") (toLongIdent "Async.StartAsTask")
         | CompExpr.Seq -> toComp "seq" e
 
-
     let replaceDotGetIfNotInLetBinding tree = 
         let isLastExpressionUnit = 
             containsExpr (function 

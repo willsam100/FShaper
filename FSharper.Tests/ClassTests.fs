@@ -540,3 +540,38 @@ type ClassTests () =
         csharp |> Converter.runWithConfig false 
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)  
+
+    [<Test>]
+    member this.``Convert Android Effects class`` () = 
+        let csharp = 
+             """using System;
+
+                [assembly:ResolutionGroupName ("MyCompany")]
+                [assembly:ExportEffect (typeof(BackgroundColorEffect), "BackgroundColorEffect")]
+                namespace EffectsDemo.Droid
+                {
+                	public class Foo
+                	{
+                		protected void OnAttached ()
+                		{
+                			foo();
+                		}
+                	}
+                }"""
+    
+        let fsharp = 
+             """namespace EffectsDemo.Droid
+
+                open System
+
+                [<assembly:ResolutionGroupName("MyCompany")>]
+                do ()
+                [<assembly:ExportEffect(typeof<BackgroundColorEffect>, "BackgroundColorEffect")>]
+                do ()
+
+                type Foo() =
+                    member this.OnAttached() = foo()"""
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)  

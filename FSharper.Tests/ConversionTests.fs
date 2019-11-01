@@ -195,6 +195,49 @@ type ConversionTests () =
         |> (fun x -> printfn "%s" x; x)
         |> should equal (formatFsharp fsharp)
 
+    [<Test>]
+    member this.``gobal prefix in namespace converts to period for type`` () = 
+        let csharp = 
+             """public class MainActivity : global::Xamarin.Forms.Platform.Android.FormsAppCompatActivity
+                {                    
+                }"""
+    
+        let fsharp = 
+             """type MainActivity() =
+                    inherit global.Xamarin.Forms.Platform.Android.FormsAppCompatActivity()"""
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)  
+
+
+    [<Test>]
+    member this.``gobal prefix in namespace converts to period for statement`` () = 
+        let csharp = 
+             """global::Xamarin.Forms.Forms.Init(this, bundle);"""
+    
+        let fsharp = 
+             """global.Xamarin.Forms.Forms.Init(this, bundle)"""
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)    
+
+
+    [<Test>]
+    member this.``enum flags are converted correctly`` () = 
+        let csharp = 
+             """[Activity (ConfigurationChanges = ConfigChanges.ScreenSize | ConfigChanges.Orientation)]
+                public class MainActivity
+                {
+                }"""
+    
+        let fsharp = 
+             """[<Activity(ConfigurationChanges = (ConfigChanges.ScreenSize ||| ConfigChanges.Orientation))>]
+                type MainActivity() ="""
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)             
+
 
     [<Test>]
     member this.``Can convert class method`` () = 
@@ -1137,4 +1180,5 @@ type ConversionTests () =
                     fooBar"""
         csharp |> Converter.runWithConfig false 
         |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)              
+        |> should equal (formatFsharp fsharp)
+

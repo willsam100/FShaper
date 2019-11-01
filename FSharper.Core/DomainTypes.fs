@@ -366,8 +366,10 @@ type AttributeValue =
 | NamedAttributeValue of (Expr * Expr)
 
 type Attribute = {
-    Name:string
+    Name:LongIdentWithDots
     Parameters:AttributeValue list
+    Target: Ident option
+    AppliesToGetterAndSetter: bool
 }
 
 type Class = {
@@ -411,6 +413,7 @@ type Structure =
     | Interface of name:Ident * methods:InferfaceMethod list
     | C of Class
     | E of Enum
+    | RootAttributes of Attribute list
 
 type Namespace = {
     Name:string
@@ -418,12 +421,11 @@ type Namespace = {
 }
 
 type File = 
-    | FileWithUsingNamespace of usingStatement:UsingStatement list * namespaces: Namespace list
-    | FileWithUsingNamespaceAndDefault of usingStatement:UsingStatement list * namespaces: Namespace list * structures:Structure list
-    | FileWithUsing of usingStatement:UsingStatement list * structures:Structure list
+    | FileWithUsingNamespaceAttributeAndDefault of usingStatement:UsingStatement list * namespaces: Namespace list * attributes: Attribute list * structures:Structure list
 
 type FsharpSyntax = 
     | File of File
     | UsingStatement of UsingStatement
     | Namespace of Namespace
+    | RootAttributes of Attribute list
     | Structures of Structure list

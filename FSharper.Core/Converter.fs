@@ -14,6 +14,48 @@ module FormatOuput =
     let createOpenStatements (name: UsingStatement) = 
         (LongIdentWithDots (name.UsingNamespace |> toIdent, [range0]), range0) |> SynModuleDecl.Open 
 
+    let createSynAttribute x = 
+        let arg = 
+            match x.Parameters with
+            | [] -> SynExpr.Paren (SynExpr.Ident (Ident("",range0)), range0, None, range0) 
+            | xs -> 
+
+                let items = xs |> List.map (function
+                    | AttributeValue.AttributeValue x -> toSynExpr x
+                    | AttributeValue.NamedAttributeValue (left, right) -> 
+                        let left = toSynExpr left
+                        let right = toSynExpr right
+                        
+                        let infixEquals = 
+                            SynExpr.App
+                                (ExprAtomicFlag.NonAtomic, true, toSingleIdent "op_Equality" |> SynExpr.Ident, left, range0)
+
+                        SynExpr.App (ExprAtomicFlag.NonAtomic, false, infixEquals, right, range0)
+                )
+              
+                let tuple = 
+                    SynExpr.Tuple (items, [], range0)
+
+                SynExpr.Paren (tuple, range0, None, range0) 
+
+        {
+            SynAttribute.TypeName = x.Name
+            SynAttribute.ArgExpr = arg
+            SynAttribute.AppliesToGetterAndSetter = x.AppliesToGetterAndSetter
+            SynAttribute.Range = range0
+            SynAttribute.Target = x.Target
+        }
+
+    let createAttributeStatements (name: Attribute list) = 
+        name 
+        |> List.map createSynAttribute
+        |> List.collect (fun x ->        
+            [
+                SynModuleDecl.Attributes ([x], range0); 
+                SynModuleDecl.DoExpr (SequencePointAtBinding range0, 
+                    SynExpr.Do (SynExpr.Const (SynConst.Unit, range0), range0), range0)
+            ])
+
     let toNamespace (ns:Namespace) mods = 
         SynModuleOrNamespace (toIdent ns.Name,false,false, mods, PreXmlDocEmpty, [], None, range0)
 
@@ -276,40 +318,8 @@ module FormatOuput =
         TypeDefn (info, model, [], range0) 
 
     let toClass (cn:Class) = 
-        let att = 
-            cn.Attributes |> List.map (fun x -> 
-                let arg = 
-                    match x.Parameters with
-                    | [] -> SynExpr.Paren (SynExpr.Ident (Ident("",range0)), range0, None, range0) 
-                    | xs -> 
+        let att = cn.Attributes |> List.map createSynAttribute
 
-                        let items = xs |> List.map (function
-                            | AttributeValue.AttributeValue x -> toSynExpr x
-                            | AttributeValue.NamedAttributeValue (left, right) -> 
-                                let left = toSynExpr left
-                                let right = toSynExpr right
-                                
-                                let infixEquals = 
-                                    SynExpr.App
-                                        (ExprAtomicFlag.NonAtomic, true, toSingleIdent "op_Equality" |> SynExpr.Ident, left, range0)
-
-                                SynExpr.App (ExprAtomicFlag.NonAtomic, false, infixEquals, right, range0)
-                        )
-                      
-                        let tuple = 
-                            SynExpr.Tuple (items, [], range0)
-
-                        SynExpr.Paren (tuple, range0, None, range0) 
-
-                {
-                    SynAttribute.TypeName = LongIdentWithDots (toIdent x.Name, [range0])
-                    SynAttribute.ArgExpr = arg
-                    SynAttribute.AppliesToGetterAndSetter = false
-                    SynAttribute.Range = range0
-                    SynAttribute.Target = None
-                }
-            )
-            
         let typeVals = 
             cn.TypeParameters
             |> List.map (fun t -> TyparDecl ([], Typar (ident (t, range0),NoStaticReq, false)) )
@@ -548,39 +558,7 @@ module FormatOuput =
                 range0
         )
 
-        let att = 
-            enum.Attributes |> List.map (fun x -> 
-                let arg = 
-                    match x.Parameters with
-                    | [] -> SynExpr.Paren (SynExpr.Ident (Ident("",range0)), range0, None, range0) 
-                    | xs -> 
-
-                        let items = xs |> List.map (function
-                            | AttributeValue.AttributeValue x -> toSynExpr x
-                            | AttributeValue.NamedAttributeValue (left, right) -> 
-                                let left = toSynExpr left
-                                let right = toSynExpr right
-                                
-                                let infixEquals = 
-                                    SynExpr.App
-                                        (ExprAtomicFlag.NonAtomic, true, toSingleIdent "op_Equality" |> SynExpr.Ident, left, range0)
-
-                                SynExpr.App (ExprAtomicFlag.NonAtomic, false, infixEquals, right, range0)
-                        )
-                      
-                        let tuple = 
-                            SynExpr.Tuple (items, [], range0)
-
-                        SynExpr.Paren (tuple, range0, None, range0) 
-
-                {
-                    SynAttribute.TypeName = LongIdentWithDots (toIdent x.Name, [range0])
-                    SynAttribute.ArgExpr = arg
-                    SynAttribute.AppliesToGetterAndSetter = false
-                    SynAttribute.Range = range0
-                    SynAttribute.Target = None
-                }
-            )
+        let att = enum.Attributes |> List.map createSynAttribute
 
         let info = ComponentInfo (att, [], [], (toIdent enum.Name), PreXmlDocEmpty, false, None, range0)
         let model = SynTypeDefnRepr.Simple (theEnum, range0)
@@ -599,36 +577,28 @@ let toFsharpSynaxTree input =
         |> TreeOps.reorderStructures
         |> List.map FormatOuput.parseStructure
 
+    let defaultNamespace = {Name = DefaultNames.namespaceName; Structures = []}
     let toNamespace ns mods decls = FormatOuput.toNamespace ns (mods @ decls)
-    let processNamespaces usings ns = 
-        let mods = usings |> List.map FormatOuput.createOpenStatements
-        ns |> List.map (fun ns -> ns.Structures |> processStructures |> toNamespace ns mods) |> FormatOuput.toFile
+
+    let processNamespaces usings attributes ns = 
+        let opens = usings |> List.map FormatOuput.createOpenStatements
+        let attributes = FormatOuput.createAttributeStatements attributes
+        ns |> List.map (fun ns -> ns.Structures |> processStructures |> toNamespace ns (opens @ attributes)) |> FormatOuput.toFile
+
+    let usingsAttributesStrucutres usings namespaces attributes s = 
+        let ns = 
+            match namespaces, s with 
+            | [], [] -> [defaultNamespace]
+            | [], s -> [{defaultNamespace with Structures = s}]
+            | ns, [] -> ns
+            | ns, s -> {defaultNamespace with Structures = s } :: ns
+        processNamespaces usings attributes ns 
         
     match input with 
     | File f -> 
-
-        let defaultNamespace = {Name = DefaultNames.namespaceName; Structures = []}
         match f with 
-        | FileWithUsing (usings, structures) -> 
-            [{defaultNamespace with Structures = structures}] 
-            |> processNamespaces usings
-
-        | FileWithUsingNamespace (usings, namespaces) -> 
-            let ns = 
-                match namespaces with 
-                | [] -> [defaultNamespace]
-                | xs -> xs 
-            processNamespaces usings ns 
-
-        | FileWithUsingNamespaceAndDefault (usings, namespaces, s) -> 
-            let ns = 
-                match namespaces, s with 
-                | [], [] -> [defaultNamespace]
-                | [], s -> [{defaultNamespace with Structures = s}]
-                | ns, [] -> ns
-                | ns, s -> {defaultNamespace with Structures = s } :: ns
-            processNamespaces usings ns 
-
+        | FileWithUsingNamespaceAttributeAndDefault (u, ns, a, s) -> usingsAttributesStrucutres u ns a s
+           
     | UsingStatement us -> 
         let ns = {Name = DefaultNames.namespaceName; Structures = [] }           
         FormatOuput.toNamespace ns [FormatOuput.createOpenStatements us] |> List.singleton |> FormatOuput.toFile
@@ -636,7 +606,8 @@ let toFsharpSynaxTree input =
     | Namespace ns -> 
         let decls = ns.Structures |> processStructures
         FormatOuput.toNamespace ns decls |> List.singleton |> FormatOuput.toFile
-        
+
+    | RootAttributes xs -> processNamespaces [] xs [defaultNamespace]
     | Structures s ->  s  |> processStructures |> FormatOuput.defaultModule |> FormatOuput.toFile
     //| Method m ->  m |> FormatOuput.toMethod [m.Name] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
     //| FSharper.Core.Field f ->  f |> Seq.head |> FormatOuput.inMethod |> FormatOuput.toMethod [] |> FormatOuput.toDefaultClass |> List.singleton |> FormatOuput.defaultModule |> FormatOuput.toFile
@@ -653,6 +624,7 @@ let removeDefaultScaffolding (fsharpOutput:string) =
     |> (fun x -> x.Replace("\"Program35949ae4-3f6e-11e9-b4dc-230deb73e77f\"" + newLine, ""))
     |> (fun x -> x.Replace("``Program35949ae4-3f6e-11e9-b4dc-230deb73e77f``" + newLine, ""))
     |> (fun x -> x.Replace("    member this.Method156143763f6e11e984e11f16c4cfd728() =" + newLine, ""))
+    |> (fun x -> x.Replace("member this.Method156143763f6e11e984e11f16c4cfd728() = ", ""))
     |> (fun x -> x.Replace("""\010""", "\\n"))
     |> (fun x -> x.Replace("""\009""", "\\t"))
     |> (fun x -> x.Replace("""\013""", "\\r"))

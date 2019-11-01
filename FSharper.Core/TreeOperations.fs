@@ -207,7 +207,11 @@ module ParserUtil =
         | "IEnumerable" -> "seq"
         | "void" -> "unit"
         | "ushort" -> "uint16"
+        
+        // back ticks are required to print as "global.Foo" rather than "``global``.Foo"
+        | x when x.Contains("global::") -> x.Replace("global::", "`global`.")
         | x -> x
+
 
     let toIdent (s:string) = 
         s.Split('.') 
@@ -253,6 +257,10 @@ module ParserUtil =
         SynSimplePat.Id (Ident(ident, range0), None, false, true, false, range0)
 
     let rec parseType (t: TypeSyntax) = 
+
+        let toLongIdent (x: TypeSyntax) = 
+            x.WithoutTrivia().ToString() |> fixKeywords |> toLongIdentWithDots  |> SynType.LongIdent
+
         match t with 
         | :? ArrayTypeSyntax as ats ->             
             let a = ats.ElementType.WithoutTrivia().ToString() |> fixKeywords 
@@ -260,6 +268,7 @@ module ParserUtil =
         
         | :? NameSyntax as n -> 
             match n with 
+            | :? QualifiedNameSyntax as qualifiedName -> qualifiedName |> toLongIdent
             | :? GenericNameSyntax as genericName -> 
                 let typeArgs = 
                     genericName.TypeArgumentList.Arguments
@@ -267,11 +276,9 @@ module ParserUtil =
                     |> Seq.toList
 
                 let x = genericName.Identifier.WithoutTrivia().ToFullString() |> fixKeywords |> toLongIdentWithDots |> SynType.LongIdent
-
                 SynType.App  (x, None, typeArgs, [], None, false, range0)
-
-            | _ -> n.WithoutTrivia().ToString() |> fixKeywords |> toLongIdentWithDots |> SynType.LongIdent
-        | x -> x.WithoutTrivia().ToString() |> fixKeywords |> toLongIdentWithDots |> SynType.LongIdent 
+            | _ -> n |> toLongIdent
+        | x -> x |> toLongIdent
 
     let rec synTypeToExpr t = 
         let rec loop t (names, types) = 

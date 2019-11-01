@@ -181,6 +181,9 @@ type CSharpStatementWalker() =
         | SyntaxKind.LessThanExpression -> PrettyNaming.CompileOpName "<" |> createLogicalExpression 
         | SyntaxKind.LessThanOrEqualExpression -> PrettyNaming.CompileOpName "<=" |> createLogicalExpression 
         | SyntaxKind.ModuloExpression -> PrettyNaming.CompileOpName "%" |> createLogicalExpression
+        | SyntaxKind.BitwiseOrExpression -> 
+            PrettyNaming.CompileOpName "|||" |> createLogicalExpression 
+            |> Expr.Paren // This seems to be required for Android as flags are used in value assignment in a class Attribute.
         | SyntaxKind.IsExpression -> 
             let t = (node.Right :?> TypeSyntax) |> parseType
             Expr.TypeTest (node.Left |> CSharpStatementWalker.ParseExpression, t)
@@ -1177,27 +1180,7 @@ type FSharperTreeBuilder() =
             node.AttributeLists
             |> Seq.collect (fun x -> 
                 x.Attributes 
-                |> Seq.map (fun x -> 
-                    let attributesValues = 
-                        x.ArgumentList
-                        |> Option.ofObj
-                        |> Option.map (fun x -> x.Arguments)
-                        |> (Option.toList >> List.toSeq >> Seq.concat)
-                        |> Seq.map (fun y -> 
-
-                            if isNull y.NameEquals then 
-                                CSharpStatementWalker.ParseChsarpNode y.Expression |>  AttributeValue
-                            else 
-                                NamedAttributeValue 
-                                    (CSharpStatementWalker.ParseChsarpNode y.NameEquals.Name, 
-                                    CSharpStatementWalker.ParseChsarpNode y.Expression) )
-                        |> Seq.toList
-                        
-                    {
-                        Attribute.Name = x.Name.WithoutTrivia().ToFullString()
-                        Attribute.Parameters = attributesValues 
-                    }
-            ))
+                |> Seq.map this.ParseAttributeSyntax)
             |> Seq.toList
         
         let enumMembers =
@@ -1254,32 +1237,40 @@ type FSharperTreeBuilder() =
                 ) |> Seq.toList
         (node.Identifier.WithoutTrivia().Text |> toSingleIdent, members)
 
+    member this.ParseAttributeSyntax(node: AttributeSyntax) = 
+        let attributesValues = 
+            node.ArgumentList
+            |> Option.ofObj
+            |> Option.map (fun x -> x.Arguments)
+            |> (Option.toList >> List.toSeq >> Seq.concat)
+            |> Seq.map (fun y -> 
+
+                if isNull y.NameEquals then 
+                    CSharpStatementWalker.ParseChsarpNode y.Expression |>  AttributeValue
+                else 
+                    NamedAttributeValue 
+                        (CSharpStatementWalker.ParseChsarpNode y.NameEquals.Name, 
+                        CSharpStatementWalker.ParseChsarpNode y.Expression) )
+            |> Seq.toList
+
+        {
+            Attribute.Name = node.Name.WithoutTrivia().ToFullString() |> toLongIdentWithDots
+            Attribute.Parameters = attributesValues
+            Target = None;
+            AppliesToGetterAndSetter = false
+        }
+
+    member this.VisitAttributeListSyntax(node:AttributeListSyntax) = 
+        let setAssembly x = {x with Target = node.Target.ToFullString().Replace(":", "") |> toSingleIdent |> Some }
+        node.Attributes |> Seq.map (this.ParseAttributeSyntax >> setAssembly) |> Seq.toList
+
     member this.VisitClassDeclaration(node:ClassDeclarationSyntax ): Structure list =
 
         let attrs = 
             node.AttributeLists
             |> Seq.collect (fun x -> 
                 x.Attributes 
-                |> Seq.map (fun x -> 
-                    let attributesValues = 
-                        x.ArgumentList
-                        |> Option.ofObj
-                        |> Option.map (fun x -> x.Arguments)
-                        |> (Option.toList >> List.toSeq >> Seq.concat)
-                        |> Seq.map (fun y -> 
-
-                            if isNull y.NameEquals then 
-                                CSharpStatementWalker.ParseChsarpNode y.Expression |>  AttributeValue
-                            else 
-                                NamedAttributeValue 
-                                    (CSharpStatementWalker.ParseChsarpNode y.NameEquals.Name, 
-                                    CSharpStatementWalker.ParseChsarpNode y.Expression) )
-                        |> Seq.toList
-                        
-                    {
-                        Attribute.Name = x.Name.WithoutTrivia().ToFullString()
-                        Attribute.Parameters = attributesValues }
-            ))
+                |> Seq.map this.ParseAttributeSyntax)
             |> Seq.toList
 
         let typeParameters = 
@@ -1300,6 +1291,7 @@ type FSharperTreeBuilder() =
         let rec doesBaseTypeBeginWithI = function
         | SynType.App  (x, _, _, _, _, _, _) -> doesBaseTypeBeginWithI x
         | SynType.LongIdent x -> 
+            // TODO: this won't work for System.IDisposable ie prefix with namespace
             match ParserUtil.joinLongIdentWithDots x with 
             | x when x.StartsWith "I" -> true
             | _ -> false
@@ -1570,85 +1562,50 @@ type FSharperTreeBuilder() =
             | :? FieldDeclarationSyntax as x -> x |> this.VisitFieldDeclaration |> fieldToClass |> C |> List.singleton |> Structures
             | :? PropertyDeclarationSyntax as x -> x |> this.VisitPropertyDeclaration |>  propertyToClass |> C |> List.singleton |> Structures
             | :? EnumDeclarationSyntax as x -> x |> this.VisitEnumDeclaration |> E |> List.singleton |> Structures
+            | :? AttributeListSyntax as x -> x |> this.VisitAttributeListSyntax |> RootAttributes
             //| x -> printfn "Skipping element: %A" <| x.Kind(); Empty
 
         match tree with 
         | None -> result |> Some
         | Some tree -> 
-            match tree, result with 
-            //| Empty, x -> x |> Some
-            | File f1, File f2 -> 
-                let result = 
-                    match f1, f2 with 
-                    | FileWithUsing (u, s), FileWithUsing (u', s') -> FileWithUsing (u @ u', s @ s') 
-                    | FileWithUsing (u, s), FileWithUsingNamespace (u', ns) -> FileWithUsingNamespaceAndDefault (u @ u', ns, s) 
-                    | FileWithUsing (u, s), FileWithUsingNamespaceAndDefault (u', ns, s') -> FileWithUsingNamespaceAndDefault (u, ns, s @ s') 
-                    | FileWithUsingNamespace (u, ns), FileWithUsing (u', s) -> FileWithUsingNamespaceAndDefault (u @ u', ns, s)
-                    | FileWithUsingNamespace (u, ns), FileWithUsingNamespace (u', ns') -> FileWithUsingNamespace (u @ u', ns @ ns')
-                    | FileWithUsingNamespace (u, ns), FileWithUsingNamespaceAndDefault (u', ns', s) -> FileWithUsingNamespaceAndDefault (u, ns @ ns', s)
-                    | FileWithUsingNamespaceAndDefault (u, ns, s), FileWithUsing (u', s') -> FileWithUsingNamespaceAndDefault (u @ u', ns, s @ s')
-                    | FileWithUsingNamespaceAndDefault (u, ns, s), FileWithUsingNamespace (u', ns') -> FileWithUsingNamespaceAndDefault (u @ u', ns @ ns', s)
-                    | FileWithUsingNamespaceAndDefault (u, ns, s), FileWithUsingNamespaceAndDefault (u', ns', s')  -> 
-                        FileWithUsingNamespaceAndDefault (u @ u', ns @ ns', s @ s')
-                result |> File |> Some
-                
-            // | File f, Interface i -> failwith "Meging interface with file, not implemented"
-            | File f, Structures structures -> 
-                let result = 
-                    match f with 
-                    | FileWithUsing (u, s) -> FileWithUsing (u, s @ structures) 
-                    | FileWithUsingNamespace (u, ns) -> FileWithUsingNamespaceAndDefault (u, ns, structures)
-                    | FileWithUsingNamespaceAndDefault (u, ns, s) -> FileWithUsingNamespaceAndDefault (u, ns, s @ structures)
-                result |> File |> Some
-            
-            | File f, Namespace ``namespace`` -> 
-
+            match tree, result with  
+            | other, File (FileWithUsingNamespaceAttributeAndDefault (u, ns, a, s))
+            | File (FileWithUsingNamespaceAttributeAndDefault (u, ns, a, s)), other -> 
                 let file = 
-                    match f with 
-                    | FileWithUsing (u, s) -> FileWithUsingNamespaceAndDefault (u, [``namespace``], s)
-                    | FileWithUsingNamespace (u, ns') -> FileWithUsingNamespace (u, ``namespace`` :: ns')
-                    | FileWithUsingNamespaceAndDefault (u, ns', s) -> FileWithUsingNamespaceAndDefault (u, ``namespace`` :: ns', s)
+                    match other with 
+                    | UsingStatement u' -> FileWithUsingNamespaceAttributeAndDefault (u @ [u'], ns, a, s)
+                    | Namespace n' -> FileWithUsingNamespaceAttributeAndDefault (u, ns @ [n'], a, s)
+                    | RootAttributes a' -> FileWithUsingNamespaceAttributeAndDefault (u, ns, a @ a', s)
+                    | Structures s' -> FileWithUsingNamespaceAttributeAndDefault (u, ns, a, s @ s')
+                    | File (FileWithUsingNamespaceAttributeAndDefault (u', ns', a', s')) -> 
+                        FileWithUsingNamespaceAttributeAndDefault (u @ u', ns @ ns', a @ a', s @ s') 
                 file |> File |> Some
 
-            | File f, UsingStatement using -> 
+            | UsingStatement using, Structures s
+            | Structures s, UsingStatement using -> 
+                FileWithUsingNamespaceAttributeAndDefault ([using], [], [], s) |> File |> Some
 
-                let file = 
-                    match f with 
-                    | FileWithUsing (usings, s) -> FileWithUsing (using :: usings, s)
-                    | FileWithUsingNamespace (usings, ns) -> FileWithUsingNamespace (using :: usings, ns)
-                    | FileWithUsingNamespaceAndDefault (usings, ns, s) -> FileWithUsingNamespaceAndDefault (using :: usings, ns, s)
-                file |> File |> Some
+            | UsingStatement using, Namespace ns
+            | Namespace ns, UsingStatement using -> 
+                FileWithUsingNamespaceAttributeAndDefault ([using], [ns], [], []) |> File |> Some
 
-            | UsingStatement using1, UsingStatement using2 -> FileWithUsing ([using1; using2], []) |> File |> Some
-            | UsingStatement using, Namespace ``namespace`` -> FileWithUsingNamespace ([using], [``namespace``]) |> File |> Some
-            | UsingStatement using, File f -> 
-                let result = 
-                    match f with 
-                    | FileWithUsing (u, s) -> FileWithUsing (using :: u, s) 
-                    | FileWithUsingNamespace (u, ns) -> FileWithUsingNamespace (using :: u, ns)
-                    | FileWithUsingNamespaceAndDefault (u, ns, s) -> FileWithUsingNamespaceAndDefault (using :: u, ns, s)
-                result |> File |> Some
-            | UsingStatement using, Structures s -> FileWithUsing ([using], s) |> File |> Some
+            | Structures s, Namespace ns
+            | Namespace ns, Structures s -> 
+                FileWithUsingNamespaceAttributeAndDefault ([], [ns], [], s) |> File |> Some
 
+            | Namespace ns', RootAttributes a
+            | RootAttributes a, Namespace ns' -> 
+                FileWithUsingNamespaceAttributeAndDefault ([], [ns'], a, []) |> File |> Some
+
+            | UsingStatement using, RootAttributes a
+            | RootAttributes a, UsingStatement using -> 
+                FileWithUsingNamespaceAttributeAndDefault ([using], [], a, []) |> File |> Some
+
+            | Structures s, RootAttributes a
+            | RootAttributes a, Structures s -> 
+                FileWithUsingNamespaceAttributeAndDefault ([], [], a, s) |> File |> Some
+
+            | RootAttributes a, RootAttributes a' -> FileWithUsingNamespaceAttributeAndDefault ([], [], a @ a', []) |> File |> Some
+            | Namespace ns, Namespace ns' -> FileWithUsingNamespaceAttributeAndDefault ([], [ns; ns'], [], []) |> File |> Some
             | Structures s, Structures s' -> Structures (s @ s') |> Some
-            | Structures s, UsingStatement using -> FileWithUsing ([using], s) |> File |> Some
-            | Structures s, Namespace ns -> FileWithUsingNamespaceAndDefault ([], [ns], s) |> File |> Some
-            | Structures structures, File f -> 
-                let result = 
-                    match f with 
-                    | FileWithUsing (u, s) -> FileWithUsing (u, s @ structures) 
-                    | FileWithUsingNamespace (u, ns) -> FileWithUsingNamespaceAndDefault (u, ns, structures)
-                    | FileWithUsingNamespaceAndDefault (u, ns, s) -> FileWithUsingNamespaceAndDefault (u, ns, s @ structures)
-                result |> File |> Some
-
-            | Namespace ns, Namespace ns' -> FileWithUsingNamespace ([], [ns; ns']) |> File |> Some
-            | Namespace ns, UsingStatement using -> FileWithUsingNamespace ([using], [ns]) |> File |> Some
-            | Namespace ns, Structures s -> FileWithUsingNamespaceAndDefault ([], [ns], s) |> File |> Some
-            | Namespace ns, File f -> 
-                let result = 
-                    match f with 
-                    | FileWithUsing (u, s) -> FileWithUsing (u, s) 
-                    | FileWithUsingNamespace (u, ns') -> FileWithUsingNamespace (u, ns :: ns')
-                    | FileWithUsingNamespaceAndDefault (u, ns', s) -> FileWithUsingNamespaceAndDefault (u, ns :: ns', s)
-                result |> File |> Some
-            //| _, _ -> sprintf "C# not supported: %A, %A" tree result |> failwith
+            | UsingStatement using1, UsingStatement using2 -> FileWithUsingNamespaceAttributeAndDefault ([using1; using2], [], [], []) |> File |> Some

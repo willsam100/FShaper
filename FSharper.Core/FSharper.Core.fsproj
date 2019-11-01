@@ -2,6 +2,7 @@
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
+  <Import Project="fsc.props" />
   <ItemGroup>
     <Compile Include="DomainTypes.fs" />
     <Compile Include="TreeOperations.fs" />
@@ -17,5 +18,4 @@
     <PackageReference Include="Fantomas" Version="2.9.2" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="2.10.0" />
   </ItemGroup>
-  <Import Project="fsc.props" />
 </Project>

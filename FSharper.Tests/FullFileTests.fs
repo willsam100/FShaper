@@ -53,10 +53,10 @@ type FullFileTests () =
         let fsharp = 
             """namespace FCMClient
 
-                open Android.Util
-                open Firebase.Iid
                 open System
                 open Android.App
+                open Firebase.Iid
+                open Android.Util
 
                 [<Service; IntentFilter([| "com.google.firebase.INSTANCE_ID_EVENT" |])>]
                 type MyFirebaseIIDService() =
@@ -209,15 +209,15 @@ type FullFileTests () =
         let fsharp = 
              """namespace StarWarsSample.Forms.Droid
 
-                open MvvmCross.ViewModels
-                open MvvmCross.Navigation
-                open MvvmCross.Binding.BindingContext
-                open Android.Widget
-                open Android.Views
-                open Android.App
-                open System.Windows.Input
                 open System
                 open System.Collections.Specialized
+                open System.Windows.Input
+                open Android.App
+                open Android.Views
+                open Android.Widget
+                open MvvmCross.Binding.BindingContext
+                open MvvmCross.Navigation
+                open MvvmCross.ViewModels
 
                 [<Android.Runtime.Preserve(AllMembers = true)>]
                 type LinkerPleaseInclude() =
@@ -493,21 +493,15 @@ type FullFileTests () =
                 type C() =
                     inherit B()
 
-                type X() = 
+                type X() =
                     inherit Z()
 
                 type D() =
                     inherit C()"""
 
-        test <@ 
-                csharp |> Converter.runWithConfig false
-                |> (fun x -> x.Split '\n' |> Array.toList)
-                |> List.map (fun x -> x.Trim())
-                    = 
-                    (fsharp 
-                        |> formatFsharp 
-                        |> (fun x -> x.Split '\n' |> Array.toList) 
-                        |> List.map (fun x -> x.Trim())) @>       
+        csharp |> Converter.runWithConfig false
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)  
 
     [<Test>]
     member this.``reoder main method and claseses`` () = 
@@ -555,11 +549,11 @@ type FullFileTests () =
     
         let fsharp = 
              """namespace Inheritance
- 
-                open System.Text
-                open System.Linq
+
                 open System
                 open System.Collections.Generic
+                open System.Linq
+                open System.Text
                 
                 type Father() =
                     member this.display() = Console.WriteLine("Display...")
@@ -583,12 +577,6 @@ type FullFileTests () =
                         d.displayTwo()
                         Console.ReadKey()"""
 
-        test <@ 
-                csharp |> Converter.runWithConfig false
-                |> (fun x -> x.Split '\n' |> Array.toList)
-                |> List.map (fun x -> x.Trim())
-                    = 
-                    (fsharp 
-                        |> formatFsharp 
-                        |> (fun x -> x.Split '\n' |> Array.toList) 
-                        |> List.map (fun x -> x.Trim())) @>       
+        csharp |> Converter.run 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp) 

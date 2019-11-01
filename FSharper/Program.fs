@@ -21,8 +21,15 @@ let main argv =
     // the syntax can then be used to idently how to construct it from the CSharp syntax
     else
         let input = 
-                 """type IService = 
-                        abstract member Serve: unit -> unit""" // Add expected F# syntax here
+                 """
+                    open System
+
+                    [<assembly:ResolutionGroupName ("MyCompany")>] do()
+                    [<assembly:ExportEffect (typeof<BackgroundColorEffect>, "BackgroundColorEffect")>] do()
+
+                    type Service = 
+                        inherit global.Foo.Bar.MainActivity() = 
+                        member For = 42""" // Add expected F# syntax here
 
         let placeholderFilename = "/home/user/Test.fsx"
         let tree = TreeOps.getUntypedTree(placeholderFilename, input)
