@@ -77,7 +77,7 @@ module FormatOuput =
                 (
                     None, SynBindingKind.NormalBinding, false, not x.IsConst, [], 
                     SynValData (None, SynValInfo ([], SynArgInfo ([], false, None )), None), 
-                    Pat.Named (Pat.Wild, Ident(x.Name, range0), false, None), init)
+                    Pat.Named (Pat.Wild, Ident(x.Name |> SynPat.getName, range0), false, None), init)
         let x = Expr.LetOrUse (false, false, [var], Expr.Const <| SynConst.String (DefaultNames.namespaceName, range0))
 
         {
@@ -287,10 +287,8 @@ module FormatOuput =
         let binding = 
             SynBinding.Binding (None, SynBindingKind.NormalBinding, false, not x.IsConst, [], PreXmlDocEmpty, 
                 SynValData (
-                    None, SynValInfo ([], SynArgInfo ([], false, Ident (x.Name, range0) |> Some )), None), 
-                SynPat.LongIdent
-                    (LongIdentWithDots (toIdent x.Name, [range0]), None, None, 
-                    Pats ([]), None, range0 ), None, 
+                    None, SynValInfo ([], SynArgInfo ([], false, None )), None), 
+                x.Name, None, 
                     toSynExpr init, range0 , SequencePointAtBinding range0)
         SynMemberDefn.LetBindings ([binding], x.IsStatic, false, range0)
 
@@ -592,6 +590,7 @@ let toFsharpSynaxTree input =
             | [], s -> [{defaultNamespace with Structures = s}]
             | ns, [] -> ns
             | ns, s -> {defaultNamespace with Structures = s } :: ns
+        let ns = correctXamarinFormsPage usings ns
         processNamespaces usings attributes ns 
         
     match input with 
@@ -661,6 +660,48 @@ let toFsharpString validateCode config parseInput =
                 )
     else  "Bad F# syntax tree" 
 
+let parseCsharp (input: string) = 
+    let input = 
+        input.Split('\n')
+        |> Array.map (fun x -> 
+            if x.TrimStart().Trim().StartsWith "..."then 
+                "//" + x 
+            else x )
+        |> String.concat "\n"
+
+    SyntaxFactory.ParseSyntaxTree (text = input, encoding = Encoding.UTF8)
+    |> (fun x -> 
+        let t = x.GetRoot()
+
+        let hasValidNode = 
+            t.ChildNodes() |> Seq.exists (function 
+                | :? UsingDirectiveSyntax
+                | :? NamespaceDeclarationSyntax
+                | :? MethodDeclarationSyntax 
+                | :? InterfaceDeclarationSyntax
+                | :? ClassDeclarationSyntax 
+                | :? EnumDeclarationSyntax -> true
+                | _ -> false )
+
+        if t.GetDiagnostics() |> Seq.isEmpty && hasValidNode then Some x
+        else
+            let x = 
+                sprintf """
+                    public void Method156143763f6e11e984e11f16c4cfd728() {
+                        %s
+                    }
+                """ input
+                |> SyntaxFactory.ParseSyntaxTree
+
+            if Seq.isEmpty <| x.GetDiagnostics() then Some x 
+            else
+                let error = x.GetDiagnostics() |> Seq.head |> (fun x -> 
+                    sprintf "%s %s" (x.Descriptor.Title.ToString()) (x.Descriptor.Description.ToString()))
+                printfn "Invalid or Incomplete C#: %s" error
+                x.GetDiagnostics() |> Seq.iter (printfn "%A")
+                None
+    )
+
 let runWithConfig validateCode (input:string) = 
 
     let config = 
@@ -674,51 +715,8 @@ let runWithConfig validateCode (input:string) =
                     FormatConfig.SpaceBeforeColon = false
             }
 
-    let tree = 
-
-        let input = 
-            input.Split('\n')
-            |> Array.map (fun x -> 
-                if x.TrimStart().Trim().StartsWith "..."then 
-                    "//" + x 
-                else x )
-            |> String.concat "\n"
-
-        SyntaxFactory.ParseSyntaxTree (text = input, encoding = Encoding.UTF8)
-        |> (fun x -> 
-            let t = x.GetRoot()
-
-            let hasValidNode = 
-                t.ChildNodes() |> Seq.exists (function 
-                    | :? UsingDirectiveSyntax
-                    | :? NamespaceDeclarationSyntax
-                    | :? MethodDeclarationSyntax 
-                    | :? InterfaceDeclarationSyntax
-                    | :? ClassDeclarationSyntax 
-                    | :? EnumDeclarationSyntax -> true
-                    | _ -> false )
-
-            if t.GetDiagnostics() |> Seq.isEmpty && hasValidNode then Some x
-            else
-                let x = 
-                    sprintf """
-                        public void Method156143763f6e11e984e11f16c4cfd728() {
-                            %s
-                        }
-                    """ input
-                    |> SyntaxFactory.ParseSyntaxTree
-
-                if Seq.isEmpty <| x.GetDiagnostics() then Some x 
-                else
-                    let error = x.GetDiagnostics() |> Seq.head |> (fun x -> 
-                        sprintf "%s %s" (x.Descriptor.Title.ToString()) (x.Descriptor.Description.ToString()))
-                    printfn "Invalid or Incomplete C#: %s" error
-                    x.GetDiagnostics() |> Seq.iter (printfn "%A")
-                    None
-        )
-
-    let visitor = new FSharperTreeBuilder()
-
+    let tree = parseCsharp input 
+    let visitor = FSharperTreeBuilder()
     let nodes = tree |> Option.map (fun x -> x.GetRoot().ChildNodes())
 
     nodes
@@ -729,6 +727,60 @@ let runWithConfig validateCode (input:string) =
     |> function 
     | Some x -> x.Trim()
     | None -> "Invalid C# syntax tree"
+
+let orderFiles files = 
+
+    let getStrucutres = function
+        | File f -> 
+            match f with 
+            | FileWithUsingNamespaceAttributeAndDefault (_, ns, _, s) -> 
+                (ns |> List.collect (fun x -> x.Structures)) @ s
+
+        | UsingStatement _ -> []
+        | Namespace ns -> ns.Structures
+        | RootAttributes xs -> []
+        | Structures s ->  s 
+
+    let isEqual x y = 
+        match x, y with 
+        | C x, C y 
+            when x.Name = y.Name && 
+                x.Methods.Length = y.Methods.Length && 
+                    x.Properties.Length = y.Properties.Length && 
+                        x.Fields.Length = y.Fields.Length
+            -> true
+        | E x, E y when x.Name = y.Name &&  x.Members.Length = y.Members.Length -> true
+        | Interface (x,y), Interface (x',y') when x.idText = x'.idText && y.Length = y'.Length -> true
+        | Structure.RootAttributes _, Structure.RootAttributes _ -> true
+        | _, _ -> false
+
+    let visitor = FSharperTreeBuilder()
+    let fsharpSyntax = 
+        files 
+        |> List.choose (fun file -> 
+            parseCsharp file
+            |> Option.map (fun x -> x.GetRoot().ChildNodes())
+            |> Option.bind(fun x ->  
+                x 
+                |> Seq.fold (visitor.ParseSyntax) None 
+                |> Option.map (fun x -> file, x)) )
+
+    let fileStructures = 
+        fsharpSyntax |> List.map (fun (file, x) -> file, getStrucutres x)
+
+    fsharpSyntax
+    |> List.fold (fun tree (file, fsharpSyntax) -> visitor.MergeFsharpSyntax (tree, fsharpSyntax) ) None
+    |> Option.map getStrucutres
+    |> Option.map reorderStructures
+    |> Option.map (fun structures -> 
+        structures 
+        |> List.choose (fun s -> 
+            fileStructures 
+            |> List.tryFind (fun (file, xs) -> xs |> List.exists (fun x -> isEqual x s) )
+            |> Option.map fst ) )
+    |> Option.map List.distinct
+    |> Option.defaultValue files // if there is nothing then the orignal order is fine
+
 
 let run (input:string) = 
     runWithConfig true input

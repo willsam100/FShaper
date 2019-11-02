@@ -546,8 +546,8 @@ type ClassTests () =
         let csharp = 
              """using System;
 
-                [assembly:ResolutionGroupName ("MyCompany")]
-                [assembly:ExportEffect (typeof(BackgroundColorEffect), "BackgroundColorEffect")]
+                [assembly :ResolutionGroupName ("MyCompany")]
+                [assembly :ExportEffect (typeof(BackgroundColorEffect), "BackgroundColorEffect")]
                 namespace EffectsDemo.Droid
                 {
                 	public class Foo
@@ -571,6 +571,36 @@ type ClassTests () =
 
                 type Foo() =
                     member this.OnAttached() = foo()"""
+
+        csharp |> Converter.runWithConfig false 
+        |> (fun x -> printfn "%s" x; x)
+        |> should equal (formatFsharp fsharp)  
+
+
+    [<Test>]
+    member this.``Convert Xamarin Forms page to work with F#`` () = 
+        let csharp = 
+             """using Xamarin.Forms;
+
+                namespace AwesomeApp
+                {
+                    public partial class MainPage : ContentPage
+                    {
+                        public MainPage()
+                        {
+                            InitializeComponent();
+                        }
+                    }
+                }"""
+    
+        let fsharp = 
+             """namespace AwesomeApp
+
+                open Xamarin.Forms
+
+                type MainPage() =
+                    inherit ContentPage()
+                    let _ = base.LoadFromXaml typeof<MainPage>"""
 
         csharp |> Converter.runWithConfig false 
         |> (fun x -> printfn "%s" x; x)

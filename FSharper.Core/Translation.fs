@@ -192,7 +192,7 @@ module TreeOps =
 
     let rec (|TypeNameContains|_|) text v = 
         match v with 
-        | SynType.LongIdent s when (ParserUtil.joinLongIdentWithDots s).Contains text -> Some ()
+        | SynType.LongIdent s when (joinLongIdentWithDots s).Contains text -> Some ()
         | SynType.App (a,b,c,d,e,f,g) -> 
             match a with
             | TypeNameContains text _ -> Some ()
@@ -380,7 +380,7 @@ module TreeOps =
             let rec isEqualExpr a b = 
                 match a,b with 
                 | Expr.Ident a, Expr.Ident b when a = b -> true
-                | Expr.LongIdent (_,a), Expr.LongIdent (_,b) when ParserUtil.joinLongIdentWithDots a = ParserUtil.joinLongIdentWithDots b -> true
+                | Expr.LongIdent (_,a), Expr.LongIdent (_,b) when joinLongIdentWithDots a = joinLongIdentWithDots b -> true
                 | _, _ -> false
 
             let rec joinAnd a b =
@@ -672,7 +672,57 @@ module TreeOps =
             | Expr.Paren (Expr.Tuple []) -> Expr.Const SynConst.Unit |> Some
             | Expr.Tuple [] -> Expr.Const SynConst.Unit |> Some
             | _ -> None)
-        
+
+    let correctXamarinFormsPage u ns =
+        if u |> List.exists (fun x -> x.UsingNamespace.Contains "Xamarin.Forms") then 
+            let updateClass (c: Class) = 
+                let loadXaml = 
+                    // let synArgInfo = SynArgInfo ([], false, None)
+                    // let synInfo = SynValInfo ([], synArgInfo)
+                    // let synValData = SynValData (None,  synInfo, None)
+                    let expr = 
+                        let name = toLongIdent "base.LoadFromXaml"
+                        let oftype = 
+                            Expr.TypeApp (toLongIdent "typeof", [c.Name.Name |> toLongIdentWithDots |> SynType.LongIdent])
+                        ExprOps.toAtomicApp name oftype
+                    // LetBind (None, NormalBinding, false, false, [], synValData, Pat.Wild, expr )
+                    {
+                        IsPublic = false
+                        Name = SynPat.Wild range0
+                        Type =  SynType.StaticConstant (SynConst.Unit, range0)
+                        Initilizer = Some expr
+                        IsConst = true
+                        IsStatic = false
+                    }
+
+                let filterInitializeComponent = 
+                    List.filter 
+                        (containsExpr 
+                            (function 
+                            | Expr.App (_, _, Expr.Ident "InitializeComponent", _) -> true
+                            | Expr.App (_, _, Expr.LongIdent (_, xs), _) 
+                                when joinLongIdentWithDots xs = "InitializeComponent" -> true
+                            | _ -> false) >> not)
+
+                let mapCtorBody = 
+                    List.map (fun (x: Ctor) -> 
+                        {x with Body = filterInitializeComponent x.Body })
+
+                {c with 
+                    Constructors = mapCtorBody c.Constructors
+                    Fields = loadXaml :: c.Fields}
+
+            let ns = 
+                ns  |> List.map (fun x -> 
+                    { x with Structures = 
+                                x.Structures |> List.map (fun x -> 
+                                    match x with 
+                                    | C c -> updateClass c |> C
+                                    | x -> x ) })
+            ns
+        else ns
+
+
     // This is a work in progress. It only orders by count of depencies that are known from the code supplied. 
     // This should be good enough, but will not work 
     // when d -> c, c -> b, b -> a the final order of b,c,d is non-derterminstic. a will be first. 
@@ -682,6 +732,7 @@ module TreeOps =
             | C c -> c.Name.Name
             | Interface (name, _) -> name.idText
             | E e -> e.Name
+            | Structure.RootAttributes _ -> "" // Atributes don't have an order
 
         let names = s |> List.map getName
         let mapping = s |> List.map (fun x -> getName x, x) |> Map.ofList
@@ -703,7 +754,8 @@ module TreeOps =
                 ]   
             | Interface (_, methods) -> 
                 methods |> List.collect (fun (Method (_, types)) -> types |> List.map SynType.getName)
-            | E _ -> []          
+            | E _ -> []  
+            | Structure.RootAttributes _ -> []        
 
         let dependencyCount = getDependencies >> List.filter (fun x -> names |> List.contains x)
   

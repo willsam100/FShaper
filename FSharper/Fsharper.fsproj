@@ -21,7 +21,7 @@
     <Compile Remove="CsharpParser.fs" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="FSharp.Core" Version="4.6.2" />
+    <PackageReference Update="FSharp.Core" Version="4.7.0" />
     <Compile Include="Program.fs" />
     <None Include="fsc.props" />
   </ItemGroup>

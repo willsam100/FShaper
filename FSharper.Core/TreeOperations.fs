@@ -6,6 +6,11 @@ open Microsoft.CodeAnalysis.CSharp.Syntax
 open Microsoft.FSharp.Compiler.Ast
 open Microsoft.FSharp.Compiler.Range
 
+[<AutoOpen>]
+module ExprIdentUtils = 
+    let joinLongIdentWithDots (b:LongIdentWithDots) = 
+        b.Lid |> List.map (fun x -> x.idText) |> String.concat "." 
+
 module ExprOps = 
     let withParenIfReq expr = 
         match expr with 
@@ -14,6 +19,9 @@ module ExprOps =
 
     let toApp left right = 
         Expr.App (ExprAtomicFlag.NonAtomic, false, left, right)
+
+    let toAtomicApp left right = 
+        Expr.App (ExprAtomicFlag.Atomic, false, left, right)
 
     let toInfixApp left op right  = 
         toApp (Expr.App (ExprAtomicFlag.NonAtomic, true, op, left)) right
@@ -24,6 +32,8 @@ module ExprOps =
             | Expr.Sequential (_, _, c, d) -> loop [] d @ loop [] c @ acc // NB: building the list backwards
             | x -> [x]
         loop [] sequential  |> List.rev    
+
+
 
 module SynSimplePat = 
 
@@ -70,16 +80,20 @@ module SynConst =
 
 module SynPat = 
 
-    let getIdent synPat = 
+    let getIdentAsReturn returnType synPat = 
         let rec loop synPat = 
             match synPat with 
             | SynPat.Attrib (a,_,_) -> loop a
             | SynPat.Typed (a,_, _) -> loop a
-            | SynPat.LongIdent (a,_,_,_,_,_) -> Expr.LongIdent (false, a)
+            | SynPat.LongIdent (a,_,_,_,_,_) -> returnType a
             | SynPat.Paren (a, _) -> loop a
             | SynPat.Named (a,_,_,_,_) -> loop a // this is for parameters (foo = foobbar), ignore foo
             | x -> printfn "%A" x; sprintf "Wrong type: %A" x |> failwith
         loop synPat  
+
+    let getIdent = getIdentAsReturn (fun a -> Expr.LongIdent (false, a))      
+
+    let getName = getIdentAsReturn joinLongIdentWithDots
 
     let getType synPat = 
         let rec loop synPat = 
@@ -245,8 +259,7 @@ module ParserUtil =
                 
                 | _ -> Expr.Sequential (SequencePointsAtSeq, true, x, y) ) 
 
-    let joinLongIdentWithDots (b:LongIdentWithDots) = 
-        b.Lid |> List.map (fun x -> x.idText) |> String.concat "." 
+
 
     let mapLongIdent f ident = 
         match ident with 

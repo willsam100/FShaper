@@ -883,7 +883,7 @@ type CSharpStatementWalker() =
 
                     let t = x.Type |> ParserUtil.parseType
                     match t with
-                    | SynType.LongIdent y when ParserUtil.joinLongIdentWithDots y = "var" -> 
+                    | SynType.LongIdent y when joinLongIdentWithDots y = "var" -> 
                         let name = x.Designation.WithoutTrivia().ToString() |> toLongIdentWithDots
                         SynPat.LongIdent (name, None, None, SynConstructorArgs.Pats [], None, range0)
                     | _ -> 
@@ -1261,7 +1261,7 @@ type FSharperTreeBuilder() =
         }
 
     member this.VisitAttributeListSyntax(node:AttributeListSyntax) = 
-        let setAssembly x = {x with Target = node.Target.ToFullString().Replace(":", "") |> toSingleIdent |> Some }
+        let setAssembly x = {x with Target = node.Target.ToFullString().Replace(":", "").Trim() |> toSingleIdent |> Some }
         node.Attributes |> Seq.map (this.ParseAttributeSyntax >> setAssembly) |> Seq.toList
 
     member this.VisitClassDeclaration(node:ClassDeclarationSyntax ): Structure list =
@@ -1292,7 +1292,7 @@ type FSharperTreeBuilder() =
         | SynType.App  (x, _, _, _, _, _, _) -> doesBaseTypeBeginWithI x
         | SynType.LongIdent x -> 
             // TODO: this won't work for System.IDisposable ie prefix with namespace
-            match ParserUtil.joinLongIdentWithDots x with 
+            match joinLongIdentWithDots x with 
             | x when x.StartsWith "I" -> true
             | _ -> false
         | _ -> false
@@ -1330,7 +1330,7 @@ type FSharperTreeBuilder() =
             |> List.filter (fun x -> x.IsPublic)
             |> List.map (fun x -> 
                 {
-                    Prop.Name = x.Name
+                    Prop.Name = SynPat.getName x.Name
                     Type = x.Type
                     Prop.Get = x.Initilizer
                     Prop.Set = None
@@ -1484,8 +1484,12 @@ type FSharperTreeBuilder() =
 
         node.Declaration.Variables
         |> Seq.map (fun x -> 
+            let name = 
+                SynPat.LongIdent
+                    (LongIdentWithDots (x.Identifier.WithoutTrivia().ToFullString() |> toIdent, [range0]), None, None, 
+                        Pats ([]), None, range0 )
             {
-                Field.Name =  x.Identifier.WithoutTrivia().ToFullString()
+                Field.Name =  name
                 Field.Type = node.Declaration.Type.WithoutTrivia() |> parseType
                 Field.IsPublic = isPublic
                 Field.Initilizer = x.Initializer |> Option.ofObj |> Option.map (fun x -> x.Value |> CSharpStatementWalker.ParseExpression )
@@ -1545,26 +1549,7 @@ type FSharperTreeBuilder() =
         { UsingNamespace = node.Name.WithoutTrivia().ToFullString() }
 
 
-    member this.ParseSyntax tree (x: SyntaxNode) = 
-
-        let fieldToClass fields = {Class.Empty() with Fields = Seq.toList fields}
-        let propertyToClass p = {Class.Empty() with Properties = [p]}
-        let methodToClass m = {Class.Empty() with Methods = [m]}
-    
-
-        let result = 
-            match x with
-            | :? UsingDirectiveSyntax as x -> x |> this.VisitUsingDirective |> UsingStatement
-            | :? NamespaceDeclarationSyntax as x -> x |> this.VisitNamespaceDeclaration |> Namespace
-            | :? MethodDeclarationSyntax as x -> x |> this.VisitMethodDeclaration |> methodToClass |> C |> List.singleton |> Structures
-            | :? InterfaceDeclarationSyntax as x -> x |> this.VisitInterfaceDeclaration |> Interface |> List.singleton |> Structures
-            | :? ClassDeclarationSyntax as x -> x |> this.VisitClassDeclaration |> Structures
-            | :? FieldDeclarationSyntax as x -> x |> this.VisitFieldDeclaration |> fieldToClass |> C |> List.singleton |> Structures
-            | :? PropertyDeclarationSyntax as x -> x |> this.VisitPropertyDeclaration |>  propertyToClass |> C |> List.singleton |> Structures
-            | :? EnumDeclarationSyntax as x -> x |> this.VisitEnumDeclaration |> E |> List.singleton |> Structures
-            | :? AttributeListSyntax as x -> x |> this.VisitAttributeListSyntax |> RootAttributes
-            //| x -> printfn "Skipping element: %A" <| x.Kind(); Empty
-
+    member this.MergeFsharpSyntax (tree, result) = 
         match tree with 
         | None -> result |> Some
         | Some tree -> 
@@ -1609,3 +1594,26 @@ type FSharperTreeBuilder() =
             | Namespace ns, Namespace ns' -> FileWithUsingNamespaceAttributeAndDefault ([], [ns; ns'], [], []) |> File |> Some
             | Structures s, Structures s' -> Structures (s @ s') |> Some
             | UsingStatement using1, UsingStatement using2 -> FileWithUsingNamespaceAttributeAndDefault ([using1; using2], [], [], []) |> File |> Some
+
+
+    member this.ParseSyntax tree (x: SyntaxNode) = 
+
+        let fieldToClass fields = {Class.Empty() with Fields = Seq.toList fields}
+        let propertyToClass p = {Class.Empty() with Properties = [p]}
+        let methodToClass m = {Class.Empty() with Methods = [m]}
+    
+        let result = 
+            match x with
+            | :? UsingDirectiveSyntax as x -> x |> this.VisitUsingDirective |> UsingStatement
+            | :? NamespaceDeclarationSyntax as x -> x |> this.VisitNamespaceDeclaration |> Namespace
+            | :? MethodDeclarationSyntax as x -> x |> this.VisitMethodDeclaration |> methodToClass |> C |> List.singleton |> Structures
+            | :? InterfaceDeclarationSyntax as x -> x |> this.VisitInterfaceDeclaration |> Interface |> List.singleton |> Structures
+            | :? ClassDeclarationSyntax as x -> x |> this.VisitClassDeclaration |> Structures
+            | :? FieldDeclarationSyntax as x -> x |> this.VisitFieldDeclaration |> fieldToClass |> C |> List.singleton |> Structures
+            | :? PropertyDeclarationSyntax as x -> x |> this.VisitPropertyDeclaration |>  propertyToClass |> C |> List.singleton |> Structures
+            | :? EnumDeclarationSyntax as x -> x |> this.VisitEnumDeclaration |> E |> List.singleton |> Structures
+            | :? AttributeListSyntax as x -> x |> this.VisitAttributeListSyntax |> RootAttributes
+            //| x -> printfn "Skipping element: %A" <| x.Kind(); Empty
+
+        this.MergeFsharpSyntax (tree, result)
+            

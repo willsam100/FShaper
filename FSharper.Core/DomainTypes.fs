@@ -354,7 +354,7 @@ type ClassName = {
 
 type Field = {
     IsPublic: bool // this syntax is not supported in F# 
-    Name:string
+    Name:SynPat
     Type: SynType
     Initilizer:Expr option
     IsConst : bool
