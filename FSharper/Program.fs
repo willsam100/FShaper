@@ -11,7 +11,7 @@ type Main( [<ParamArray>] foobar: string [] ) =
 [<EntryPoint>]
 let main argv =
 
-    let printFsharpTree = true
+    let printFsharpTree = false
 
     if not printFsharpTree then 
         let input = System.Console.In.ReadToEnd()
