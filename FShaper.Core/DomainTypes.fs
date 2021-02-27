@@ -1,10 +1,10 @@
-﻿// Represents and intermediate tree structure. 
-// This allows illegal F# syntax, but can be created direclty from C#
+// Represents and intermediate tree structure. 
+// This allows illegal F# syntax, but can be created directly from C#
 // The tree is then re-written to be legal F# syntax, and translate to the F# AST. 
-// The tree also does not require some things, most importanlty a range - Fantomas is used to format the code
+// The tree also does not require some things, most importantly a range - Fantomas is used to format the code
 
 namespace FSharper.Core
-open Microsoft.FSharp.Compiler.Ast
+open FSharp.Compiler.SyntaxTree
 
 [<RequireQualifiedAccess>]
 module DefaultNames = 
@@ -22,7 +22,13 @@ type Pat =
     | Attrib of SynPat * SynAttributes
     | Or of SynPat * SynPat
     | Ands of SynPat list
-    | LongIdent of longDotId:LongIdentWithDots * (* holds additional ident for tooling *) Ident option * SynValTyparDecls option (* usually None: temporary used to parse "f<'a> x = x"*) * SynConstructorArgs  * accessibility:SynAccess option
+    | LongIdent of
+        longDotId: LongIdentWithDots *
+        // extraId: Ident option * // holds additional ident for tooling
+        typarDecls: SynValTyparDecls option * // usually None: temporary used to parse "f<'a> x = x"
+        argPats: SynArgPats * 
+        accessibility: SynAccess option
+
     | Tuple of Pat list
     | StructTuple of SynPat list
     | Paren of SynPat
@@ -40,7 +46,7 @@ type Pat =
     /// Deprecated character range:ranges
     | DeprecatedCharRange of char * char
     /// Used internally in the type checker
-    | InstanceMember of  Ident * Ident * (* holds additional ident for tooling *) Ident option * accessibility:SynAccess option (* adhoc overloaded method/property *)
+    | InstanceMember of Ident * Ident * (* holds additional ident for tooling *) Ident option * accessibility:SynAccess option (* adhoc overloaded method/property *)
 
     /// A pattern arising from a parse error
     | FromParseError of SynPat
@@ -68,7 +74,7 @@ and MatchClause =
 
 and
     [<NoEquality; NoComparison;RequireQualifiedAccess>]
-     Expr  = 
+    Expr = 
 
     /// F# syntax: (expr)
     ///
@@ -82,31 +88,31 @@ and
     | Const of constant:SynConst
 
     /// F# syntax: expr : type
-    | Typed of  expr:Expr * synType:SynType 
+    | Typed of expr:Expr * synType:SynType 
 
     /// F# syntax: e1, ..., eN
     | Tuple of exprs:Expr list
 
     ///// F# syntax: struct (e1, ..., eN)
-    //| StructTuple of  exprs:Expr list
+    //| StructTuple of exprs:Expr list
 
     ///// F# syntax: [ e1; ...; en ], [| e1; ...; en |]
-    //| ArrayOrList of  isList:bool * exprs:Expr list
+    //| ArrayOrList of isList:bool * exprs:Expr list
 
     /// F# syntax: new C(...)
     /// The flag is true if known to be 'family' ('protected') scope
     | New of isProtected:bool * typeName:SynType * expr:Expr
     
     /// F# syntax: 'while ... do ...'
-    | While of whileSeqPoint:SequencePointInfoForWhileLoop * whileExpr:Expr * doExpr:Expr
+    | While of whileExpr:Expr * doExpr:Expr
 
     /// F# syntax: 'for i = ... to ... do ...'
-    | For of forSeqPoint:SequencePointInfoForForLoop * ident:Ident * identBody:Expr * bool * toBody:Expr * doBody:Expr
+    | For of ident:Ident * identBody:Expr * bool * toBody:Expr * doBody:Expr
 
     /// Expr.ForEach (spBind, seqExprOnly, isFromSource, pat, enumExpr, bodyExpr, mWholeExpr).
     ///
     /// F# syntax: 'for ... in ... do ...'
-    | ForEach of forSeqPoint:SequencePointInfoForForLoop * seqExprOnly:SeqExprOnly * isFromSource:bool * pat:Pat * enumExpr:Expr * bodyExpr:Expr
+    | ForEach of seqExprOnly:SeqExprOnly * isFromSource:bool * pat:Pat * enumExpr:Expr * bodyExpr:Expr
 
     /// F# syntax: [ expr ], [| expr |]
     | ArrayOrListOfSeqExpr of isArray:bool * expr:Expr
@@ -120,16 +126,16 @@ and
     /// Second bool indicates if this is a "later" part of an iterated sequence of lambdas
     ///
     /// F# syntax: fun pat -> expr
-    | Lambda of  fromMethod:bool * inLambdaSeq:bool * args:SynSimplePats * body:Expr
+    | Lambda of fromMethod:bool * inLambdaSeq:bool * args:SynSimplePats * body:Expr * parsedData: (SynPat list * SynExpr) option
 
     ///// F# syntax: function pat1 -> expr | ... | patN -> exprN
     //| MatchLambda of isExnMatch:bool * range * SynMatchClause list * matchSeqPoint:SequencePointInfoForBinding
 
     ///// F# syntax: match expr with pat1 -> expr | ... | patN -> exprN
-    | Match of  matchSeqPoint:SequencePointInfoForBinding * expr:Expr * clauses:MatchClause list * isExnMatch:bool (* bool indicates if this is an exception match in a computation expression which throws unmatched exceptions *)
+    | Match of expr:Expr * clauses:MatchClause list
 
     ///// F# syntax: do expr
-    //| Do of  expr:Expr
+    //| Do of expr:Expr
 
     /// F# syntax: assert expr
     | Assert of expr:Expr
@@ -143,7 +149,7 @@ and
     | App of ExprAtomicFlag * isInfix:bool * funcExpr:Expr * argExpr:Expr
 
     /// TypeApp(expr, mLessThan, types, mCommas, mGreaterThan, mTypeArgs, mWholeExpr)
-    ///     "mCommas" are the ranges for interstitial commas, these only matter for parsing/design-time tooling, the typechecker may munge/discard them
+    ///     "mCommas" are the ranges for interstitial commas, these only matter for parsing/design-time tooling, the type checker may munge/discard them
     ///
     /// F# syntax: expr<type1,...,typeN>
     | TypeApp of expr:Expr  * typeNames:SynType list
@@ -157,10 +163,10 @@ and
     | LetOrUse of isRecursive:bool * isUse:bool * bindings:FSharpBinding list * body:Expr
 
     /// F# syntax: try expr with pat -> expr
-    | TryWith of tryExpr:Expr * withCases:MatchClause list * trySeqPoint:SequencePointInfoForTry * withSeqPoint:SequencePointInfoForWith
+    | TryWith of tryExpr:Expr * withCases:MatchClause list
 
     /// F# syntax: try expr finally expr
-    | TryFinally of tryExpr:Expr * finallyExpr:Expr * trySeqPoint:SequencePointInfoForTry * finallySeqPoint:SequencePointInfoForFinally
+    | TryFinally of tryExpr:Expr * finallyExpr:Expr
 
     /// F# syntax: lazy expr
     | Lazy of Expr
@@ -169,13 +175,13 @@ and
     ///  isTrueSeq: false indicates "let v = a in b; v"
     ///
     /// F# syntax: expr; expr
-    | Sequential of seqPoint:SequencePointInfoForSeq * isTrueSeq:bool * expr1:Expr * expr2:Expr
+    | Sequential of isTrueSeq:bool * expr1:Expr * expr2:Expr
 
     ///  IfThenElse(exprGuard,exprThen,optionalExprElse,spIfToThen,isFromErrorRecovery,mIfToThen,mIfToEndOfLastBranch)
     ///
     /// F# syntax: if expr then expr
     /// F# syntax: if expr then expr else expr
-    | IfThenElse of ifExpr:Expr * thenExpr:Expr * elseExpr:Expr option * spIfToThen:SequencePointInfoForBinding * isFromErrorRecovery:bool
+    | IfThenElse of ifExpr:Expr * thenExpr:Expr * elseExpr:Expr option * isFromErrorRecovery:bool
     /// F# syntax: ident
     /// Optimized representation, = Expr.LongIdent(false,[id],id.idRange)
     | Ident of string
@@ -214,24 +220,24 @@ and
     //| DotNamedIndexedPropertySet of Expr * longDotId:LongIdentWithDots * Expr * Expr
 
     /// F# syntax: expr :? type
-    | TypeTest of  expr:Expr * typeName:SynType
+    | TypeTest of expr:Expr * typeName:SynType
 
     /// F# syntax: expr :> type
-    | Upcast of  expr:Expr * typeName:SynType 
+    | Upcast of expr:Expr * typeName:SynType 
 
     /// F# syntax: expr :?> type
-    | Downcast of  expr:Expr * typeName:SynType 
+    | Downcast of expr:Expr * typeName:SynType 
     /// F# syntax: upcast expr
-    | InferredUpcast of  expr:Expr 
+    | InferredUpcast of expr:Expr 
 
     /// F# syntax: downcast expr
-    | InferredDowncast of  expr:Expr 
+    | InferredDowncast of expr:Expr 
 
     /// F# syntax: null
     | Null 
 
     /// F# syntax: &expr, &&expr
-    | AddressOf of  isByref:bool * Expr 
+    | AddressOf of isByref:bool * Expr 
 
     /// F# syntax: ((typar1 or ... or typarN): (member-dig) expr)
     | TraitCall of SynTypar list * SynMemberSig * Expr 
@@ -259,10 +265,18 @@ and
     /// F# syntax: let! pat = expr in expr
     /// F# syntax: use! pat = expr in expr
     /// Computation expressions only
-    | LetOrUseBang    of bindSeqPoint:SequencePointInfoForBinding * isUse:bool * isFromSource:bool * SynPat * Expr * Expr
+    // | LetOrUseBang of bindSeqPoint:SequencePointInfoForBinding * isUse:bool * isFromSource:bool * SynPat * Expr * Expr
+    | LetOrUseBang of
+        isUse: bool *
+        isFromSource: bool *
+        pat: SynPat *
+        rhs: Expr *
+        // TODO: New language feature. Likely not needed as output does not nee to use this
+        // andBangs:(DebugPointForBinding * bool * bool * SynPat * Expr) list * 
+        body: Expr
 
     /// F# syntax: match! expr with pat1 -> expr | ... | patN -> exprN
-    //| MatchBang of  matchSeqPoint:SequencePointInfoForBinding * expr:Expr * clauses:SynMatchClause list * isExnMatch:bool (* bool indicates if this is an exception match in a computation expression which throws unmatched exceptions *)
+    //| MatchBang of matchSeqPoint:SequencePointInfoForBinding * expr:Expr * clauses:SynMatchClause list * isExnMatch:bool (* bool indicates if this is an exception match in a computation expression which throws unmatched exceptions *)
 
     /// F# syntax: do! expr
     /// Computation expressions only
@@ -279,7 +293,7 @@ and
     | ReturnFromIf of Expr
 
 module MatchClause = 
-    open Microsoft.FSharp.Compiler.Range
+    open FSharp.Compiler.Range
 
     let getPat (MatchClause.Clause(j,_,_)) = j
     let wild result = MatchClause.Clause(SynPat.Wild range0, None, result);
@@ -301,7 +315,7 @@ module Expr =
 
     let mapClauses f m =
         match m with 
-        | (Expr.Match(a,b,c,d)) -> (Expr.Match(a,b, f c,d))
+        | (Expr.Match(a,b)) -> (Expr.Match(a,f b))
         | e -> e
 
 
@@ -356,7 +370,7 @@ type Field = {
     IsPublic: bool // this syntax is not supported in F# 
     Name:SynPat
     Type: SynType
-    Initilizer:Expr option
+    Initializer:Expr option
     IsConst : bool
     IsStatic: bool
 }
@@ -403,14 +417,14 @@ type Enum = {
 //TODO: non-default enum types
 and EnumMemberValue = string * Expr
 
-type InferfaceMethod = Method of name:Ident * parameters:SynType list
+type InterfaceMethod = InterfaceMethod of name:Ident * parameters:SynType list
 
 type UsingStatement = {
     UsingNamespace:string
 }
 
 type Structure = 
-    | Interface of name:Ident * methods:InferfaceMethod list
+    | Interface of name:Ident * methods:InterfaceMethod list
     | C of Class
     | E of Enum
     | RootAttributes of Attribute list

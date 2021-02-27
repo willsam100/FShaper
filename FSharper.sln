@@ -1,11 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Fsharper", "FSharper\Fsharper.fsproj", "{665270ED-ED65-493B-941B-301555459C2F}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Fshaper", "FShaper\Fshaper.fsproj", "{665270ED-ED65-493B-941B-301555459C2F}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FSharper.Core", "FSharper.Core\FSharper.Core.fsproj", "{2027535C-D5D3-4D90-96A1-E996BA3F999E}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FShaper.Core", "FShaper.Core\FShaper.Core.fsproj", "{2027535C-D5D3-4D90-96A1-E996BA3F999E}"
 EndProject
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FSharper.Tests", "FSharper.Tests\FSharper.Tests.fsproj", "{E28705CF-B8B7-49EF-95BA-E6D0C7A885FA}"
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "FShaper.Tests", "FShaper.Tests\FShaper.Tests.fsproj", "{E28705CF-B8B7-49EF-95BA-E6D0C7A885FA}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

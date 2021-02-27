@@ -3,29 +3,18 @@ namespace Tests
 open NUnit.Framework
 open FSharper.Core
 open FsUnit
-open System
-open System.IO
-open System.Linq
 open Swensen.Unquote.Assertions
+open CodeFormatter
 
 
 [<TestFixture>]
 type FullFileTests () =
 
-    let formatFsharp (s:string) = 
-
-        let indent = "                "
-        s.Split ("\n") |> Array.map (fun x -> if x.StartsWith indent then x.Substring indent.Length else x) |> String.concat "\n"
-        |> (fun s -> 
-            s
-                .Replace("\n    \n", "\n\n")
-                .Replace("\n            \n", "\n\n")
-                .Trim() )
-
     [<Test>]
-    member this.``mulitple attributes`` () = 
+    member this.``multiple attributes`` () = 
         let csharp = 
-             """using System;
+             """
+                using System;
                 using Android.App;
                 using Firebase.Iid;
                 using Android.Util;
@@ -51,7 +40,8 @@ type FullFileTests () =
                 }"""
 
         let fsharp = 
-            """namespace FCMClient
+            """
+                namespace FCMClient
 
                 open System
                 open Android.App
@@ -70,144 +60,148 @@ type FullFileTests () =
                 
                     member this.SendRegistrationToServer(token: string) = ()"""
                    
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
         |> should equal (formatFsharp fsharp)
 
     [<Test>]
     member this.``convert full file - namespace with class`` () = 
         let csharp = 
-         """using System;
-            using System.Collections.Specialized;
-            using System.Windows.Input;
-            using Android.App;
-            using Android.Views;
-            using Android.Widget;
-            using MvvmCross.Binding.BindingContext;
-            using MvvmCross.Navigation;
-            using MvvmCross.ViewModels;
+            """    
+                using System;
+                using System.Collections.Specialized;
+                using System.Windows.Input;
+                using Android.App;
+                using Android.Views;
+                using Android.Widget;
+                using MvvmCross.Binding.BindingContext;
+                using MvvmCross.Navigation;
+                using MvvmCross.ViewModels;
 
-            namespace StarWarsSample.Forms.Droid
-            {
-                // This class is never actually executed, but when Xamarin linking is enabled it does how to ensure types and properties
-                // are preserved in the deployed app
-                [Android.Runtime.Preserve(AllMembers = true)]
-                public class LinkerPleaseInclude
+                namespace StarWarsSample.Forms.Droid
                 {
-                    public void Include(Button button)
+                    // This class is never actually executed, but when Xamarin linking is enabled it does how to ensure types and properties
+                    // are preserved in the deployed app
+                    [Android.Runtime.Preserve(AllMembers = true)]
+                    public class LinkerPleaseInclude
                     {
-                        button.Click += (s, e) => button.Text = button.Text + "";
+                        public void Include(Button button)
+                        {
+                            button.Click += (s, e) => button.Text = button.Text + "";
+                        }
+
+                    public void Include(CheckBox checkBox)
+                    {
+                        checkBox.CheckedChange += (sender, args) => checkBox.Checked = !checkBox.Checked;
                     }
 
-                public void Include(CheckBox checkBox)
-                {
-                    checkBox.CheckedChange += (sender, args) => checkBox.Checked = !checkBox.Checked;
-                }
-
-                public void Include(View view)
-                {
-                    view.Click += (s, e) => view.ContentDescription = view.ContentDescription + "";
-                }
-
-                public void Include(TextView text)
-                {
-                    text.AfterTextChanged += (sender, args) => text.Text = "" + text.Text;
-                    text.Hint = "" + text.Hint;
-                }
-
-                public void Include(CheckedTextView text)
-                {
-                    text.AfterTextChanged += (sender, args) => text.Text = "" + text.Text;
-                    text.Hint = "" + text.Hint;
-                }
-
-                public void Include(CompoundButton cb)
-                {
-                    cb.CheckedChange += (sender, args) => cb.Checked = !cb.Checked;
-                }
-
-                public void Include(SeekBar sb)
-                {
-                    sb.ProgressChanged += (sender, args) => sb.Progress = sb.Progress + 1;
-                }
-
-                public void Include(RadioGroup radioGroup)
-                {
-                    radioGroup.CheckedChange += (sender, args) => radioGroup.Check(args.CheckedId);
-                }
-
-                public void Include(RadioButton radioButton)
-                {
-                    radioButton.CheckedChange += (sender, args) => radioButton.Checked = args.IsChecked;
-                }
-
-                public void Include(RatingBar ratingBar)
-                {
-                    ratingBar.RatingBarChange += (sender, args) => ratingBar.Rating = 0 + ratingBar.Rating;
-                }
-
-                public void Include(Activity act)
-                {
-                    act.Title = act.Title + "";
-                }
-
-                public void Include(INotifyCollectionChanged changed)
-                {
-                    changed.CollectionChanged += (s, e) => { var test = $"{e.Action}{e.NewItems}{e.NewStartingIndex}{e.OldItems}"; };
-                }
-
-                public void Include(ICommand command)
-                {
-                    command.CanExecuteChanged += (s, e) => { if (command.CanExecute(null)) command.Execute(null); };
-                }
-
-                public void Include(MvvmCross.IoC.MvxPropertyInjector injector)
-                {
-                    injector = new MvvmCross.IoC.MvxPropertyInjector();
-                }
-
-                public void Include(System.ComponentModel.INotifyPropertyChanged changed)
-                {
-                    changed.PropertyChanged += (sender, e) =>
+                    public void Include(View view)
                     {
-                        var test = e.PropertyName;
-                    };
-                }
+                        view.Click += (s, e) => view.ContentDescription = view.ContentDescription + "";
+                    }
 
-                public void Include(MvxTaskBasedBindingContext context)
-                {
-                    context.Dispose();
-                    var context2 = new MvxTaskBasedBindingContext();
-                    context2.Dispose();
-                }
+                    public void Include(TextView text)
+                    {
+                        text.AfterTextChanged += (sender, args) => text.Text = "" + text.Text;
+                        text.Hint = "" + text.Hint;
+                    }
 
-                public void Include(MvxNavigationService service, IMvxViewModelLoader loader)
-                {
-                    service = new MvxNavigationService(null, loader);
-                }
+                    public void Include(CheckedTextView text)
+                    {
+                        text.AfterTextChanged += (sender, args) => text.Text = "" + text.Text;
+                        text.Hint = "" + text.Hint;
+                    }
 
-                public void Include(ConsoleColor color)
-                {
-                    Console.Write("");
-                    Console.WriteLine("");
-                    color = Console.ForegroundColor;
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.ForegroundColor = ConsoleColor.Magenta;
-                    Console.ForegroundColor = ConsoleColor.White;
-                    Console.ForegroundColor = ConsoleColor.Gray;
-                    Console.ForegroundColor = ConsoleColor.DarkGray;
-                }
+                    public void Include(CompoundButton cb)
+                    {
+                        cb.CheckedChange += (sender, args) => cb.Checked = !cb.Checked;
+                    }
 
-                public void Include(MvvmCross.Plugin.Json.Plugin plugin)
-                {
-                    plugin.Load();
+                    public void Include(SeekBar sb)
+                    {
+                        sb.ProgressChanged += (sender, args) => sb.Progress = sb.Progress + 1;
+                    }
+
+                    public void Include(RadioGroup radioGroup)
+                    {
+                        radioGroup.CheckedChange += (sender, args) => radioGroup.Check(args.CheckedId);
+                    }
+
+                    public void Include(RadioButton radioButton)
+                    {
+                        radioButton.CheckedChange += (sender, args) => radioButton.Checked = args.IsChecked;
+                    }
+
+                    public void Include(RatingBar ratingBar)
+                    {
+                        ratingBar.RatingBarChange += (sender, args) => ratingBar.Rating = 0 + ratingBar.Rating;
+                    }
+
+                    public void Include(Activity act)
+                    {
+                        act.Title = act.Title + "";
+                    }
+
+                    public void Include(INotifyCollectionChanged changed)
+                    {
+                        changed.CollectionChanged += (s, e) => { var test = $"{e.Action}{e.NewItems}{e.NewStartingIndex}{e.OldItems}"; };
+                    }
+
+                    public void Include(ICommand command)
+                    {
+                        command.CanExecuteChanged += (s, e) => { if (command.CanExecute(null)) command.Execute(null); };
+                    }
+
+                    public void Include(MvvmCross.IoC.MvxPropertyInjector injector)
+                    {
+                        injector = new MvvmCross.IoC.MvxPropertyInjector();
+                    }
+
+                    public void Include(System.ComponentModel.INotifyPropertyChanged changed)
+                    {
+                        changed.PropertyChanged += (sender, e) =>
+                        {
+                            var test = e.PropertyName;
+                        };
+                    }
+
+                    public void Include(MvxTaskBasedBindingContext context)
+                    {
+                        context.Dispose();
+                        var context2 = new MvxTaskBasedBindingContext();
+                        context2.Dispose();
+                    }
+
+                    public void Include(MvxNavigationService service, IMvxViewModelLoader loader)
+                    {
+                        service = new MvxNavigationService(null, loader);
+                    }
+
+                    public void Include(ConsoleColor color)
+                    {
+                        Console.Write("");
+                        Console.WriteLine("");
+                        color = Console.ForegroundColor;
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.ForegroundColor = ConsoleColor.Magenta;
+                        Console.ForegroundColor = ConsoleColor.White;
+                        Console.ForegroundColor = ConsoleColor.Gray;
+                        Console.ForegroundColor = ConsoleColor.DarkGray;
+                    }
+
+                    public void Include(MvvmCross.Plugin.Json.Plugin plugin)
+                    {
+                        plugin.Load();
+                    }
                 }
-            }
-        }"""
+            }"""
 
         let fsharp = 
-             """namespace StarWarsSample.Forms.Droid
+             """
+                namespace StarWarsSample.Forms.Droid
 
                 open System
                 open System.Collections.Specialized
@@ -283,17 +277,20 @@ type FullFileTests () =
                         Console.ForegroundColor <- ConsoleColor.Gray
                         Console.ForegroundColor <- ConsoleColor.DarkGray
 
-                    member this.Include(plugin: MvvmCross.Plugin.Json.Plugin) = plugin.Load()""" 
+                    member this.Include(plugin: MvvmCross.Plugin.Json.Plugin) = plugin.Load()"""
 
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
         |> should equal (formatFsharp fsharp)
 
 
     [<Test>]
-    member this.``parse mutliple classes`` () = 
+    member this.``parse multiple classes`` () = 
         let csharp = 
-             """public class QuestStarted
+             """
+                public class QuestStarted
                 {
                     public string Name { get; set; }
                     public Guid Id { get; set; }
@@ -316,7 +313,8 @@ type FullFileTests () =
                 }"""
     
         let fsharp = 
-             """type QuestStarted() =
+             """
+                type QuestStarted() =
                     member val Name: string = Unchecked.defaultof<string> with get, set
                     member val Id: Guid = Unchecked.defaultof<Guid> with get, set
                     override this.ToString(): string = sprintf "Quest %O started" (Name)
@@ -326,14 +324,17 @@ type FullFileTests () =
                     member val Id: Guid = Unchecked.defaultof<Guid> with get, set
                     override this.ToString(): string = sprintf "Quest %O ended" (Name)"""
 
-        csharp |> Converter.runWithConfig false 
-        |> (fun x -> printfn "%s" x; x)
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
         |> should equal (formatFsharp fsharp)
 
     [<Test>]
     member this.``parse multiple classes with odd formatting`` () = 
         let csharp = 
-             """public interface IService {
+             """
+                public interface IService {
                     void Serve();
                 }
                 public class Service1 : IService {
@@ -351,7 +352,8 @@ type FullFileTests () =
                 }"""
     
         let fsharp = 
-             """type IService =
+             """
+                type IService =
                     abstract Serve: unit -> unit
  
                 type Service1() =
@@ -367,20 +369,17 @@ type FullFileTests () =
                 type Client(_service: IService) =
                     member this.ServeMethod() = this._service.Serve()"""
 
-        test <@ 
-                csharp |> Converter.runWithConfig false
-                |> (fun x -> x.Split '\n' |> Array.toList)
-                |> List.map (fun x -> x.Trim())
-                    = 
-                    (fsharp 
-                        |> formatFsharp 
-                        |> (fun x -> x.Split '\n' |> Array.toList) 
-                        |> List.map (fun x -> x.Trim())) @>       
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
+        |> should equal (formatFsharp fsharp)     
 
     [<Test>]
     member this.``Correct order of classes`` () = 
         let csharp = 
-             """public class Bar
+             """
+                public class Bar
                 {
                     public Foo GetFoo()
                     {
@@ -398,27 +397,25 @@ type FullFileTests () =
                  """
     
         let fsharp = 
-             """type Foo() =
+             """
+                type Foo() =
                     member this.MagicNumber(): int = 42
 
                 type Bar() =
                     member this.GetFoo(): Foo = (new Foo()).MagicNumber"""
 
-        test <@ 
-                csharp |> Converter.runWithConfig false
-                |> (fun x -> x.Split '\n' |> Array.toList)
-                |> List.map (fun x -> x.Trim())
-                    = 
-                    (fsharp 
-                        |> formatFsharp 
-                        |> (fun x -> x.Split '\n' |> Array.toList) 
-                        |> List.map (fun x -> x.Trim())) @>       
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
+        |> should equal (formatFsharp fsharp)    
 
 
     [<Test>]
     member this.``fixed complex class ordering`` () = 
         let csharp = 
-             """public class D : C
+             """
+                public class D : C
                 {
                 }
 
@@ -435,31 +432,33 @@ type FullFileTests () =
                 }"""
     
         let fsharp = 
-             """type A() =
+             """
+                type A() =
+
+
 
                 type B() =
                     inherit A()
+
                 
                 type C() =
                     inherit B()
 
+
                 type D() =
                     inherit C()"""
 
-        test <@ 
-                csharp |> Converter.runWithConfig false
-                |> (fun x -> x.Split '\n' |> Array.toList)
-                |> List.map (fun x -> x.Trim())
-                    = 
-                    (fsharp 
-                        |> formatFsharp 
-                        |> (fun x -> x.Split '\n' |> Array.toList) 
-                        |> List.map (fun x -> x.Trim())) @>       
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
+        |> should equal (simpleFormat fsharp)   
 
     [<Test>]
     member this.``fixed two sets of related classes`` () = 
         let csharp = 
-             """public class D : C
+             """
+                public class D : C
                 {
                 }
 
@@ -484,29 +483,41 @@ type FullFileTests () =
                 }"""
     
         let fsharp = 
-             """type B() =
+             """
+                type B() =
+
+
 
                 type A() =
+                
+                
 
                 type Z() =
+                
+                
                 
                 type C() =
                     inherit B()
 
+
                 type X() =
                     inherit Z()
+
 
                 type D() =
                     inherit C()"""
 
-        csharp |> Converter.runWithConfig false
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)  
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
+        |> should equal (simpleFormat fsharp) 
 
     [<Test>]
-    member this.``reoder main method and claseses`` () = 
+    member this.``reorder main method and classes`` () = 
         let csharp = 
-             """using System;
+             """
+                using System;
                 using System.Collections.Generic;
                 using System.Linq;
                 using System.Text;
@@ -548,7 +559,8 @@ type FullFileTests () =
                 }"""
     
         let fsharp = 
-             """namespace Inheritance
+             """
+                namespace Inheritance
 
                 open System
                 open System.Collections.Generic
@@ -577,6 +589,8 @@ type FullFileTests () =
                         d.displayTwo()
                         Console.ReadKey()"""
 
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp) 
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
+        |> should equal (formatFsharp fsharp)

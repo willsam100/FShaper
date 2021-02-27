@@ -3,20 +3,10 @@
 open NUnit.Framework
 open FSharper.Core
 open FsUnit
-open System
+open CodeFormatter
 
 [<TestFixture>]
-type LoopngTests () =
-
-    let formatFsharp (s:string) = 
-
-        let indent = "                "
-        s.Split ("\n") |> Array.map (fun x -> if x.StartsWith indent then x.Substring indent.Length else x) |> String.concat "\n"
-        |> (fun s -> 
-            s
-                .Replace("\n    \n", "\n\n")
-                .Replace("\n            \n", "\n\n")
-                .Trim() )
+type LoopingTests () =
 
     [<Test>]
     member this.``standard incrementing for loop i, i < i++`` () = 
@@ -30,8 +20,10 @@ type LoopngTests () =
              """for n = 0 to 9 do
                     Console.WriteLine(sprintf "%O" (n))"""
                    
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
         |> should equal (formatFsharp fsharp)
 
     [<Test>]
@@ -46,8 +38,10 @@ type LoopngTests () =
              """for n = 0 to 10 do
                     Console.WriteLine(sprintf "%O" (n))"""
                    
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
         |> should equal (formatFsharp fsharp)
 
     [<Test>]
@@ -62,8 +56,10 @@ type LoopngTests () =
              """for n = 10 downto 1 do
                     Console.WriteLine(sprintf "%O" (n))"""
                    
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
         |> should equal (formatFsharp fsharp)
 
     [<Test>]
@@ -90,9 +86,11 @@ type LoopngTests () =
                         Console.WriteLine(sprintf "%O" (i))
                         c.[0] <- -c.[0]"""
                    
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
+        |> should equal (formatFsharpWithClass fsharp)
 
     [<Test>]
     member this.``weird double for loop`` () = 
@@ -122,9 +120,11 @@ type LoopngTests () =
                             c.[j] <- c.[j - 1] - c.[j]
                         c.[0] <- -c.[0]"""
                    
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
+        |> should equal (formatFsharpWithClass fsharp)
 
     [<Test>]
     member this.``convert ushort cast`` () = 
@@ -139,9 +139,11 @@ type LoopngTests () =
                     for ctr = (int 'a') to (int 'z') do
                         sb.Append(Convert.ToChar(ctr), 4)"""
 
-        csharp |> Converter.runWithConfig false 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
+        |> should equal (formatFsharpWithClass fsharp)
 
     [<Test>]
     member this.``simple while loop`` () = 
@@ -163,12 +165,14 @@ type LoopngTests () =
                         i <- i - 1
                         Console.WriteLine(sprintf "%O" (i))"""
                    
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
+        |> should equal (formatFsharpWithClass fsharp)
 
     [<Test>]
-    member this.``simple while loop with preincrement`` () = 
+    member this.``simple while loop with pre-increment`` () = 
         let csharp = 
              """void Loop()
                 {
@@ -183,12 +187,14 @@ type LoopngTests () =
                         Console.WriteLine(sprintf "%O" (i))
                         i <- i - 1"""
                    
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
+        |> should equal (formatFsharpWithClass fsharp)
 
     [<Test>]
-    member this.``simple while loop with postincrement`` () = 
+    member this.``simple while loop with post-increment`` () = 
         let csharp = 
              """void Loop()
                 {
@@ -202,12 +208,14 @@ type LoopngTests () =
                         i <- i - 1
                         Console.WriteLine(sprintf "%O" (i))"""
                    
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
+        |> should equal (formatFsharpWithClass fsharp)
 
     [<Test>]
-    member this.``for loop with long ident for condition and preincrement`` () = 
+    member this.``for loop with long ident for condition and pre-increment`` () = 
         let csharp = 
              """void Foo() 
                 {
@@ -222,9 +230,11 @@ type LoopngTests () =
                     for i = 0 to (word.Length - 1) do
                         Console.WriteLine(sprintf "%O" (i))"""
                    
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
+        |> should equal (formatFsharpWithClass fsharp)
 
     [<Test>]
     member this.``for loop with <= in loop`` () = 
@@ -242,6 +252,8 @@ type LoopngTests () =
                     for i = 1 to word.Length do
                         Console.WriteLine(sprintf "%O" (i - 1))"""
                    
-        csharp |> Converter.run 
-        |> (fun x -> printfn "%s" x; x)
-        |> should equal (formatFsharp fsharp)
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
+        |> should equal (formatFsharpWithClass fsharp)

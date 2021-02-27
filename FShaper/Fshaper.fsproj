@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>netcoreapp2.1</TargetFramework>
+    <TargetFramework>netcoreapp3.0</TargetFramework>
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>fsharper</ToolCommandName>
     <PackOnBuild>true</PackOnBuild>
@@ -9,8 +9,9 @@
     <PackageVersion>1.0.0</PackageVersion>
     <Authors>Sam Williams</Authors>
     <Description>Carries out the heavy lifting of converting C# to F#</Description>
+    <RootNamespace>Fsharper</RootNamespace>
   </PropertyGroup>
-  <Import Project="fsc.props" />
+<!--  <Import Project="fsc.props" />-->
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <OtherFlags> --simpleresolution --nocopyfsharpcore</OtherFlags>
   </PropertyGroup>
@@ -21,11 +22,11 @@
     <Compile Remove="CsharpParser.fs" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Update="FSharp.Core" Version="4.7.0" />
+    <PackageReference Update="FSharp.Core" Version="5.0.0" />
     <Compile Include="Program.fs" />
-    <None Include="fsc.props" />
+<!--    <None Include="fsc.props" />-->
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\FSharper.Core\FSharper.Core.fsproj" />
+    <ProjectReference Include="..\FShaper.Core\FShaper.Core.fsproj" />
   </ItemGroup>
 </Project>

@@ -1,6 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>FSharper.Core</RootNamespace>
+  </PropertyGroup>
+  <PropertyGroup>
+    <DisableAutoSetFscCompilerPath>true</DisableAutoSetFscCompilerPath>
+    <DotnetFscCompilerPath />
+    <FscToolPath>/Library/Frameworks/Mono.framework/Versions/Current/Commands</FscToolPath>
+    <FscToolExe>fsharpc</FscToolExe>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="DomainTypes.fs" />
@@ -11,12 +18,11 @@
     <Compile Include="XamarinConverter.fs" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="FSharp.Compiler.Service" Version="25.0.1" />
-    <PackageReference Include="FSharp.Compiler.Tools" Version="10.2.1" />
-    <PackageReference Include="FSharp.Core" Version="4.6.2" />
+    <PackageReference Include="FSharp.Compiler.Service" Version="38.0.2" />
+    <PackageReference Include="FSharp.Compiler.Tools" Version="10.2.3" />
+    <PackageReference Update="FSharp.Core" Version="5.0.0" />
     <PackageReference Include="Microsoft.Net.Compilers" Version="2.10.0" />
-    <PackageReference Include="Fantomas" Version="2.9.2" />
+    <PackageReference Include="Fantomas" Version="4.3.0" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="2.10.0" />
   </ItemGroup>
-  <Import Project="fsc.props" />
 </Project>

@@ -1,10 +1,9 @@
 ﻿namespace FSharper.Core
 
-open Microsoft.CodeAnalysis.CSharp
-open Microsoft.FSharp.Compiler.Ast
-open Microsoft.FSharp.Compiler.Range
-open Microsoft.FSharp.Compiler.SourceCodeServices.Structure
-open Microsoft.FSharp.Compiler.SourceCodeServices 
+open FSharp.Compiler.SyntaxTree
+open FSharp.Compiler.Range
+open FSharp.Compiler.SourceCodeServices 
+open FSharp.Compiler.XmlDoc
 open Fantomas
 
 module List = 
@@ -45,7 +44,7 @@ module DAG =
     let successors n edges =
         edges |> List.filter (fun (s,_) -> s = n) |> List.map snd 
 
-    let toplogicalSort edges seed =
+    let topologicalSort edges seed =
         let rec sort path visited = function
             | [] -> visited
             | n::nodes ->
@@ -103,21 +102,21 @@ module TreeOps =
 
     let rec toSynPat p = 
         match p with 
-        | Pat.LongIdent (a, b, c, d, e) -> SynPat.LongIdent (a, b, c, d, e, range0)
+        | Pat.LongIdent (a, b, c, d) -> SynPat.LongIdent (a, None, b, c, d, range0)
         | Pat.Wild -> SynPat.Wild range0
         | Pat.Named (a,b,c,d)-> SynPat.Named (toSynPat a,b,c,d, range0)
 
     let rec toBinding b = 
         let (LetBind (accessibility, kind, mustInline, isMutable, attrs, valData, headPat, expr)) = b
-        SynBinding.Binding (accessibility, kind, mustInline, isMutable, attrs, PreXmlDocEmpty, valData, toSynPat headPat, None, toSynExpr expr,range0, SequencePointAtBinding range0)
+        SynBinding.Binding (accessibility, kind, mustInline, isMutable, attrs, PreXmlDocEmpty, valData, toSynPat headPat, None, toSynExpr expr,range0, NoDebugPointAtDoBinding)
 
     and toSynMatchExpr m = 
         match m with 
-        | MatchClause.Clause (a,b,c) -> SynMatchClause.Clause (a, b |> Option.map toSynExpr,toSynExpr c,range0, SequencePointInfoForTarget.SequencePointAtTarget)
+        | MatchClause.Clause (a,b,c) -> SynMatchClause.Clause (a, b |> Option.map toSynExpr,toSynExpr c,range0, DebugPointForTarget.No)
 
     and toSynIndexerArg m = 
         match m with 
-        | One e -> e |> toSynExpr |> SynIndexerArg.One
+        | One e -> SynIndexerArg.One ((e |> toSynExpr), false, range0) // TODO: review 'false' here
         
     and 
         toSynExpr (expr:Expr): SynExpr = 
@@ -125,21 +124,21 @@ module TreeOps =
         | Expr.Paren x -> SynExpr.Paren (toSynExpr x, range0, None, range0)
         | Expr.Const x -> SynExpr.Const (x, range0)
         | Expr.Typed (expr, typeName) -> SynExpr.Typed (toSynExpr expr, typeName, range0)
-        | Expr.Tuple xs -> SynExpr.Tuple (xs |> List.map toSynExpr, [range0], range0) 
+        | Expr.Tuple xs -> SynExpr.Tuple (false, xs |> List.map toSynExpr, [range0], range0) // TODO review 'true' for isStrict
 
         | Expr.New (isProtected, typeName, expr) -> SynExpr.New (isProtected, typeName, toSynExpr expr, range0)
-        | Expr.While (a,b,c) -> SynExpr.While  (a, toSynExpr b, toSynExpr c, range0)
-        | Expr.For (a,b,c,d,e,f ) -> SynExpr.For (a,b,toSynExpr c,d, toSynExpr e, toSynExpr f, range0)
+        | Expr.While (b,c) -> SynExpr.While  (DebugPointAtWhile.No, toSynExpr b, toSynExpr c, range0)
+        | Expr.For (b,c,d,e,f ) -> SynExpr.For (DebugPointAtFor.No, b,toSynExpr c,d, toSynExpr e, toSynExpr f, range0)
 
-        | Expr.ForEach (a,b,c,d,e,f) -> SynExpr.ForEach (a,b,c,toSynPat d,toSynExpr e, toSynExpr f,range0)
+        | Expr.ForEach (b,c,d,e,f) -> SynExpr.ForEach (DebugPointAtFor.No, b,c,toSynPat d,toSynExpr e, toSynExpr f,range0)
 
         | Expr.ArrayOrListOfSeqExpr (isArray, expr) -> SynExpr.ArrayOrListOfSeqExpr (isArray, toSynExpr expr, range0)
         | Expr.CompExpr (isArrayOrList, isNotNakedRefCell, expr) -> SynExpr.CompExpr (isArrayOrList, isNotNakedRefCell, toSynExpr expr, range0)
 
-        | Expr.Lambda (a,b,c,d) -> SynExpr.Lambda (a,b,c, toSynExpr d, range0)  //of  fromMethod:bool * inLambdaSeq:bool * args:SynSimplePats * body:Expr
+        | Expr.Lambda (a,b,c,d, e) -> SynExpr.Lambda (a,b,c, toSynExpr d, e, range0)  //of  fromMethod:bool * inLambdaSeq:bool * args:SynSimplePats * body:Expr
 
         //| Assert of expr:Expr
-        | Expr.Match (a,b,c,d) -> SynExpr.Match (a,toSynExpr b,c |> List.map toSynMatchExpr, d, range0)
+        | Expr.Match (b,c) -> SynExpr.Match (DebugPointForBinding.NoDebugPointAtDoBinding, toSynExpr b,c |> List.map toSynMatchExpr, range0)
 
         | Expr.App (a,b,c,d) -> SynExpr.App (a,b, toSynExpr c, toSynExpr d, range0)
         | Expr.TypeApp (a,b) -> SynExpr.TypeApp (toSynExpr a, range0, b, [], None, range0, range0)
@@ -148,17 +147,17 @@ module TreeOps =
 
             SynExpr.LetOrUse (a,b,c |> List.map toBinding, toSynExpr d, range0)
 
-        | Expr.LetOrUseBang (a,b,c,d,e,f) -> SynExpr.LetOrUseBang (a,b,c,d, toSynExpr e, toSynExpr f, range0)
+        | Expr.LetOrUseBang (b,c,d,e,f) -> SynExpr.LetOrUseBang (NoDebugPointAtDoBinding,b,c,d, toSynExpr e, [], toSynExpr f, range0)
 
-        | Expr.TryWith (a,b,c,d) -> SynExpr.TryWith (toSynExpr a,range0, b |> List.map toSynMatchExpr, range0, range0, c,d)
+        | Expr.TryWith (a,b) -> SynExpr.TryWith (toSynExpr a,range0, b |> List.map toSynMatchExpr, range0, range0, DebugPointAtTry.No, DebugPointAtWith.No)
 
         //| TryFinally of tryExpr:Expr * finallyExpr:Expr * trySeqPoint:SequencePointInfoForTry * finallySeqPoint:SequencePointInfoForFinally
 
         //| Lazy of Expr
 
-        | Expr.Sequential (a,b,c,d) -> SynExpr.Sequential (a,b,toSynExpr c,toSynExpr d, range0)
+        | Expr.Sequential (b,c,d) -> SynExpr.Sequential (DebugPointAtSequential.ExprOnly,b,toSynExpr c,toSynExpr d, range0)
 
-        | Expr.IfThenElse (a,b,c,d,e) -> SynExpr.IfThenElse (toSynExpr a, toSynExpr b,c |> Option.map toSynExpr ,d,e, range0, range0) 
+        | Expr.IfThenElse (a,b,c,d) -> SynExpr.IfThenElse (toSynExpr a, toSynExpr b,c |> Option.map toSynExpr, NoDebugPointAtDoBinding ,d, range0, range0) 
 
         | Expr.Ident s -> SynExpr.Ident (Ident(s, range0))
         | Expr.LongIdent (a,b) -> SynExpr.LongIdent (a,b, None, range0)
@@ -219,10 +218,10 @@ module TreeOps =
             | SynExpr.DotGet (e, a, b, c) -> SynExpr.DotGet (replaceSynExpr e, a,b,c)
             | SynExpr.ForEach (a,b,c,d,e,f,g) -> SynExpr.ForEach (a,b,c,d, replaceSynExpr e, replaceSynExpr f,g)    
             | SynExpr.IfThenElse (a,b,c,d,e,f,g) -> SynExpr.IfThenElse (replaceSynExpr a,replaceSynExpr b,c |> Option.map replaceSynExpr,d,e,f,g)
-            | SynExpr.Lambda (a,b,c,d,e) -> SynExpr.Lambda (a,b,c, replaceSynExpr d,e)
+            | SynExpr.Lambda (a,b,c,d,e,f) -> SynExpr.Lambda (a,b,c, replaceSynExpr d,e, f)
             | SynExpr.LetOrUse (x,y,z,i,j) -> SynExpr.LetOrUse (x,y,z, replaceSynExpr i,j)
-            | SynExpr.LetOrUseBang (x,y,z,i,j,k,l) -> SynExpr.LetOrUseBang (x,y,z, i, replaceSynExpr j,replaceSynExpr k, l)
-            | SynExpr.Match (a,b,c,d,f) -> SynExpr.Match (a, replaceSynExpr b,c,d,f)
+            | SynExpr.LetOrUseBang (x,y,z,i,j,k,l,m) -> SynExpr.LetOrUseBang (x,y,z, i, replaceSynExpr j, k, replaceSynExpr l, m)
+            | SynExpr.Match (a,b,c,d) -> SynExpr.Match (a, replaceSynExpr b,c,d)
             | SynExpr.Paren (e,a,b,c) -> replaceSynExpr e |> (fun e -> SynExpr.Paren (e,a,b,c))
             | SynExpr.Sequential (s1,s2,s3,s4,r) -> SynExpr.Sequential (s1,s2, replaceSynExpr s3, replaceSynExpr s4, r)
             | SynExpr.TryWith (a,b,c,d,e,f,g) -> SynExpr.TryWith ( replaceSynExpr a,b,c,d,e,f,g)
@@ -235,14 +234,22 @@ module TreeOps =
     let rewriteReturnInIf tree = 
         let rec walker tree = 
             match tree with 
-            | Expr.Sequential (s1,s2,s3,s4) -> 
+            | Expr.Sequential (s2,s3,s4) -> 
                 match s3 with 
-                | Expr.IfThenElse (x,y,z,i,j) when Option.isNone z && isReturnFrom y -> 
-                    Expr.IfThenElse (replaceExpr walker x, replaceExpr walker y, Some s4 |> Option.map (replaceExpr walker), i, j) |> Some
+                | Expr.IfThenElse (x,y,z,i) when Option.isNone z && isReturnFrom y -> 
+                    Expr.IfThenElse (replaceExpr walker x, replaceExpr walker y, Some s4 |> Option.map (replaceExpr walker), i) |> Some
 
-                | Expr.IfThenElse (x,y,z,i,j) when Option.map isReturnFrom z = Some true -> 
-                    let first = Expr.Sequential (SequencePointInfoForSeq.SequencePointsAtSeq, true, replaceExpr walker y, replaceExpr walker s4)  
-                    Expr.IfThenElse (replaceExpr walker x,first, z |> Option.map (replaceExpr walker), i, j) |> Some
+                | Expr.IfThenElse (x,y,z,i) when Option.map isReturnFrom z = Some true -> 
+                    let first = Expr.Sequential (true, replaceExpr walker y, replaceExpr walker s4)  
+                    Expr.IfThenElse (replaceExpr walker x,first, z |> Option.map (replaceExpr walker), i) |> Some
+                    
+                | Expr.IfThenElse (x,y,z,i) when Option.isSome z && isReturnFrom y ->
+                    let z =
+                        z
+                        |> Option.map (replaceExpr walker)
+                        |> Option.map (fun x -> Expr.Sequential (true, x, replaceExpr walker s4))
+                       
+                    Expr.IfThenElse (replaceExpr walker x, replaceExpr walker y , z, i) |> Some
                 | _ -> None
             | Expr.ReturnFromIf e -> Some e
             | _ -> None
@@ -298,51 +305,51 @@ module TreeOps =
 
         let rec removeMatchPlaceholder testExpr firstResult secondResult = 
 
-            let logicalNotonMatchExpr (a,b,c,d) = 
+            let logicalMatchExpr (b,c) = 
                 match c with 
-                | x::y::[] -> 
+                | x::[ y ] -> 
                     let firstExpr = MatchClause.getExpr x
                     let secondExpr = MatchClause.getExpr y
                     let c = 
                         [ x |> MatchClause.mapExpr (fun _ -> secondExpr); y |> MatchClause.mapExpr (fun _ -> firstExpr) ]
-                    Expr.Match (a,b,c,d)
-                | _ -> Expr.Match (a,b,c,d) // possible from a merge of two match, the not causes have already been solved
+                    Expr.Match (b,c)
+                | _ -> Expr.Match (b,c) // possible from a merge of two match, the not causes have already been solved
 
             let logicalAndonMatchExpr (a,b,c,d) = 
                 match c with 
-                | x::y::[] -> 
+                | x::[ y ] -> 
                     let firstExpr = MatchClause.getExpr x
                     let secondExpr = MatchClause.getExpr y
                     let c = 
                         [ x |> MatchClause.mapExpr (fun _ -> secondExpr); y |> MatchClause.mapExpr (fun _ -> firstExpr) ]
-                    Expr.Match (a,b,c,d)
+                    Expr.Match (b,c)
                 | x::y::xs -> // There are three, which means a logical OR, x is the 'else' clause
                     let firstExpr = MatchClause.getExpr y
                     let secondExpr = MatchClause.getExpr x
                     let c = 
                         (xs |> List.map (MatchClause.mapExpr (fun _ -> secondExpr))) @
                             [ x |> MatchClause.mapExpr (fun _ -> secondExpr); y |> MatchClause.mapExpr (fun _ -> firstExpr) ]
-                    Expr.Match (a,b,c,d)
-                | _ -> Expr.Match (a,b,c,d)
+                    Expr.Match (b,c)
+                | _ -> Expr.Match (b,c)
 
 
             let joinOr a b =
                 match a, b with 
-                | Expr.Match (a,b,c,d), Expr.Match (_,_,g,_) -> 
+                | Expr.Match (b,c), Expr.Match (_,g) -> 
                     let c = 
                         match c,g with 
-                        | x::y::[], x'::y'::[] -> [ x; x'; y ]
+                        | x::[ y ], x'::[ y' ] -> [ x; x'; y ]
                         | xs, ys -> 
                             let joined = xs @ ys 
                             let notWild = joined |> List.filter (MatchClause.isWild >> not) |> List.rev
                             let firstWild = joined |> List.filter MatchClause.isWild |> List.head
                             firstWild :: notWild |> List.rev
-                    Expr.Match (a,b,c,d)
+                    Expr.Match (b,c)
                     
-                | Expr.Match (a,b,c,d), e -> 
+                | Expr.Match (b,c), e -> 
                     let c = 
                         match List.rev c with 
-                        | x::MatchClause.Clause(h,None,first)::[] -> 
+                        | x::[ MatchClause.Clause(h,None,first) ] -> 
                             let second = MatchClause.getExpr x
                             [
                                 MatchClause.Clause(h,Some e,second)
@@ -366,16 +373,15 @@ module TreeOps =
 
                         | [e] -> [e]
                         | [] -> []
+                    Expr.Match (b, c)
 
-                    Expr.Match (a,b, c,d)
-
-                | left, Expr.Match (_,_,clauses,_) -> 
+                | left, Expr.Match (_,clauses) -> 
                     let thenExpr = 
                         match clauses |> List.rev with 
                         | _::MatchClause.Clause(_, _, thenExpr)::_ -> thenExpr
-                        | _ -> Expr.Const SynConst.Unit // syntacially possible, but should never happen when translating C# if statement
+                        | _ -> Expr.Const SynConst.Unit // syntactically possible, but should never happen when translating C# if statement
 
-                    Expr.IfThenElse (left, thenExpr, Some b, SequencePointInfoForBinding.SequencePointAtBinding range0, false)
+                    Expr.IfThenElse (left, thenExpr, Some b, false)
 
             let rec isEqualExpr a b = 
                 match a,b with 
@@ -385,7 +391,7 @@ module TreeOps =
 
             let rec joinAnd a b =
                 match a, b with 
-                | Expr.Match (a,b,c,d), Expr.Match (_, b',c',_) -> 
+                | Expr.Match (b,c), Expr.Match (b',c') -> 
                     if (isEqualExpr b b') then 
                         let left = 
                             c |> MatchClause.matchClauses 
@@ -411,7 +417,7 @@ module TreeOps =
                                 wild
                             ]
 
-                        Expr.Match(a,b,clauses,d)
+                        Expr.Match(b,clauses)
 
                     else 
 
@@ -436,16 +442,16 @@ module TreeOps =
 
                         let clauses = 
                             [
-                                MatchClause.Clause (SynPat.Tuple ([leftMatch; rightMatch], range0), whenClauseJoinAnd leftWhenExpr rightWhenExpr, first)
+                                MatchClause.Clause (SynPat.Tuple (false, [leftMatch; rightMatch], range0), whenClauseJoinAnd leftWhenExpr rightWhenExpr, first)
                                 wild 
                             ]
 
-                        Expr.Match(a,b,clauses,d)
+                        Expr.Match(b,clauses)
                     
-                | Expr.Match (a,b,c,d), e -> 
+                | Expr.Match (b,c), e -> 
                     let c = 
                         match List.rev c with 
-                        | x::(MatchClause.Clause(h,k,first))::[] -> 
+                        | x::[ (MatchClause.Clause(h,k,first)) ] -> 
                             [
                                 MatchClause.Clause(h,(whenClauseJoinAnd k (Some e)),first); x
                             ]
@@ -456,16 +462,16 @@ module TreeOps =
                             [x] @ xs
                         | [] -> []
 
-                    Expr.Match (a,b, c,d)
-                | Expr.App(isAtomic, isInfix, Expr.Ident "not", left), Expr.Match (_,_, clauses,_) -> // not e1 && e2 === e1 || e2
+                    Expr.Match (b,c)
+                | Expr.App(isAtomic, isInfix, Expr.Ident "not", left), Expr.Match (_, clauses) -> // not e1 && e2 === e1 || e2
                     let thenExpr = 
                         match clauses |> List.rev with 
                         | _::MatchClause.Clause(_, _, thenExpr)::_ -> thenExpr
-                        | _ -> Expr.Const SynConst.Unit // syntacially possible, but should never happen when translating C# if statement
+                        | _ -> Expr.Const SynConst.Unit // syntactically possible, but should never happen when translating C# if statement
 
-                    Expr.IfThenElse (left, thenExpr, Some b, SequencePointInfoForBinding.SequencePointAtBinding range0, false)
+                    Expr.IfThenElse (left, thenExpr, Some b, false)
 
-                | e, Expr.Match (_,_, clauses,_) -> joinAnd b a // Swap around and will be sorted via match statement
+                | e, Expr.Match (_,clauses) -> joinAnd b a // Swap around and will be sorted via match statement
 
                 | a, b -> 
                     let a = Expr.App (ExprAtomicFlag.NonAtomic, true, Expr.Ident "op_BooleanAnd", a)
@@ -474,7 +480,7 @@ module TreeOps =
             match testExpr  with 
             | Expr.CsharpIsMatch (expr, left) -> 
                 let clauses = [ MatchClause.Clause(left,None,firstResult); MatchClause.wild secondResult ]
-                Expr.Match (SequencePointInfoForBinding.SequencePointAtBinding range0, expr, clauses, false)
+                Expr.Match (expr, clauses)
 
             | Expr.App (atomic,isInfix,left,right) -> 
 
@@ -482,7 +488,7 @@ module TreeOps =
                 let right' = removeMatchPlaceholder right firstResult secondResult
 
                 match left', right' with 
-                | Expr.Ident "not", Expr.Match (a,b,c,d) -> logicalNotonMatchExpr (a,b,c,d)
+                | Expr.Ident "not", Expr.Match (b,c) -> logicalMatchExpr (b,c)
                 
                 | Expr.App (e,f,(Expr.Ident "op_BooleanOr"),h), a -> joinOr h a
                 | Expr.App (e,f,(Expr.Ident "op_BooleanAnd"),h), a -> joinAnd h a
@@ -493,7 +499,7 @@ module TreeOps =
 
         let rec walker tree = 
             match tree with 
-            | Expr.IfThenElse (a,b,c,d,e) -> 
+            | Expr.IfThenElse (a,b,c,d) -> 
 
                 if containsCsharpIsMatch a then 
                     let cClause = (match c with | Some x -> x | None -> Expr.Const SynConst.Unit)
@@ -527,33 +533,33 @@ module TreeOps =
 
         let rec walker = function
             | Expr.DoBang _ as expr -> expr |> awaitTask |> Some
-            | Expr.LetOrUseBang (a,b,c,d,e,Expr.LongIdent (f,g)) -> Expr.YieldOrReturn ((false, true), e |> awaitTask) |> Some
-            | Expr.LetOrUseBang (a,b,c,d,e,Expr.Sequential(f,g,h,i)) -> 
-                let f = Expr.Sequential(f,g,replaceExpr walker h, replaceExpr walker i)
-                Expr.LetOrUseBang (a,b,c,d,e |> awaitTask, f) |> Some
-            | Expr.LetOrUseBang (a,b,c,d,e,Expr.LetOrUseBang (f,g,h,i,j,k)) -> 
-                let f = replaceExpr walker (Expr.LetOrUseBang (f,g,h,i,j,k))
-                Expr.LetOrUseBang (a,b,c,d,e |> awaitTask, f) |> Some
-            | Expr.LetOrUseBang (a,b,c,d,e,Expr.App (f,g,h,i)) -> 
+            | Expr.LetOrUseBang (b,c,d,e,Expr.LongIdent (f,g)) -> Expr.YieldOrReturn ((false, true), e |> awaitTask) |> Some
+            | Expr.LetOrUseBang (b,c,d,e,Expr.Sequential(g,h,i)) -> 
+                let f = Expr.Sequential(g,replaceExpr walker h, replaceExpr walker i)
+                Expr.LetOrUseBang (b,c,d,e |> awaitTask, f) |> Some
+            | Expr.LetOrUseBang (b,c,d,e,Expr.LetOrUseBang (g,h,i,j,k)) -> 
+                let f = replaceExpr walker (Expr.LetOrUseBang (g,h,i,j,k))
+                Expr.LetOrUseBang (b,c,d,e |> awaitTask, f) |> Some
+            | Expr.LetOrUseBang (b,c,d,e,Expr.App (f,g,h,i)) -> 
                 let f = Expr.YieldOrReturn ((false, true), Expr.App (f,g,h,i))
-                Expr.LetOrUseBang (a,b,c,d,e |> awaitTask, f) |> Some
-            | Expr.LetOrUseBang (a,b,c,d,e,f) -> 
-                Expr.LetOrUseBang (a,b,c,d, e |> awaitTask, f) |> Some
+                Expr.LetOrUseBang (b,c,d,e |> awaitTask, f) |> Some
+            | Expr.LetOrUseBang (b,c,d,e,f) -> 
+                Expr.LetOrUseBang (b,c,d, e |> awaitTask, f) |> Some
             | _ -> None
 
         let rec replaceLetRootWithReturn = function 
             | Expr.LetOrUse (a,b,c, Expr.LetOrUse (e,f,g,h)) ->  
                 let d = replaceLetRootWithReturn (Expr.LetOrUse (e,f,g,h))
                 Expr.LetOrUse (a,b,c,d)
-            | Expr.LetOrUse (a,b,c, Expr.LetOrUseBang (d,e,f,g,h,i)) ->  
-                let d = replaceLetRootWithReturn (Expr.LetOrUseBang (d,e,f,g,h,i))
+            | Expr.LetOrUse (a,b,c, Expr.LetOrUseBang (e,f,g,h,i)) ->  
+                let d = replaceLetRootWithReturn (Expr.LetOrUseBang (e,f,g,h,i))
                 Expr.LetOrUse (a,b,c,d)
             | Expr.LetOrUse (a,b,c, d) ->  
                 Expr.LetOrUse (a,b,c,Expr.YieldOrReturn ((false, true), d))
-            | Expr.LetOrUseBang (a,b,c,d,e,f) -> 
-                Expr.LetOrUseBang (a,b,c,d,e, replaceLetRootWithReturn f)
-            | Expr.Sequential (a,b,c,d) -> 
-                Expr.Sequential (a,b,c, replaceLetRootWithReturn d)
+            | Expr.LetOrUseBang (b,c,d,e,f) -> 
+                Expr.LetOrUseBang (b,c,d,e, replaceLetRootWithReturn f)
+            | Expr.Sequential (b,c,d) -> 
+                Expr.Sequential (b,c, replaceLetRootWithReturn d)
             | e -> Expr.YieldOrReturn ((false, true), e)
 
         let handleReturnKeyword e = 
@@ -602,11 +608,11 @@ module TreeOps =
                     sprintf "%s.%s" prefixName b |> toLongIdent |> Some
                 | _ -> None
 
-            | Expr.Sequential (s1,s2,s3,s4) -> 
+            | Expr.Sequential (s2,s3,s4) -> 
                 match s3 with 
-                | Expr.IfThenElse (x,y,z,i,j) when Option.isNone z ->
+                | Expr.IfThenElse (x,y,z,i) when Option.isNone z ->
                     match isLastExpressionUnit y with 
-                    | true -> Expr.IfThenElse (x,y, Some s4, i, j) |> Some
+                    | true -> Expr.IfThenElse (x,y, Some s4, i) |> Some
                     | false -> None
                 | _ -> None
             | _ -> None
@@ -618,15 +624,15 @@ module TreeOps =
             match tree with 
             | Expr.LetOrUse (x,y,z,Expr.InLetPlaceholder) ->  
                 Expr.LetOrUse (x,y,z, Expr.Const SynConst.Unit) |> Some
-            | Expr.LetOrUseBang (a,b,c,d,e,Expr.InLetPlaceholder) -> Expr.YieldOrReturn ((false, true), e) |> Some
-            | Expr.Sequential (s1,s2,s3,s4) -> 
+            | Expr.LetOrUseBang (b,c,d,e,Expr.InLetPlaceholder) -> Expr.YieldOrReturn ((false, true), e) |> Some
+            | Expr.Sequential (s2,s3,s4) -> 
                 match s3 with  
                 | Expr.LetOrUse (x,y,z,Expr.InLetPlaceholder) -> 
                     let e = replaceExpr walker s4
                     Expr.LetOrUse (x,y,z,e) |> Some
-                | Expr.LetOrUseBang (a,b,c,d,e,f) -> 
+                | Expr.LetOrUseBang (b,c,d,e,f) -> 
                     let f = replaceExpr walker s4
-                    Expr.LetOrUseBang (a,b,c,d,e,f) |> Some
+                    Expr.LetOrUseBang (b,c,d,e,f) |> Some
                 | _ -> None
             | _ -> None
         replaceExpr walker tree
@@ -650,7 +656,7 @@ module TreeOps =
             | e -> None
         replaceExpr walker tree
             
-        //// root of tree should not be contain immeidate child of InLetPlaceholder (has no meaning)
+        //// root of tree should not be contain immediate child of InLetPlaceholder (has no meaning)
         //| Expr.LetOrUse (x,y,z,i) ->  
         //    Expr.LetOrUse (x,y,z,recurse i)
 
@@ -682,15 +688,15 @@ module TreeOps =
                     // let synValData = SynValData (None,  synInfo, None)
                     let expr = 
                         let name = toLongIdent "base.LoadFromXaml"
-                        let oftype = 
+                        let ofType = 
                             Expr.TypeApp (toLongIdent "typeof", [c.Name.Name |> toLongIdentWithDots |> SynType.LongIdent])
-                        ExprOps.toAtomicApp name oftype
+                        ExprOps.toAtomicApp name ofType
                     // LetBind (None, NormalBinding, false, false, [], synValData, Pat.Wild, expr )
                     {
                         IsPublic = false
                         Name = SynPat.Wild range0
                         Type =  SynType.StaticConstant (SynConst.Unit, range0)
-                        Initilizer = Some expr
+                        Initializer = Some expr
                         IsConst = true
                         IsStatic = false
                     }
@@ -723,16 +729,16 @@ module TreeOps =
         else ns
 
 
-    // This is a work in progress. It only orders by count of depencies that are known from the code supplied. 
+    // This is a work in progress. It only orders by count of dependencies that are known from the code supplied. 
     // This should be good enough, but will not work 
-    // when d -> c, c -> b, b -> a the final order of b,c,d is non-derterminstic. a will be first. 
+    // when d -> c, c -> b, b -> a the final order of b,c,d is non-deterministic. a will be first. 
     let reorderStructures s =
 
         let getName = function 
             | C c -> c.Name.Name
             | Interface (name, _) -> name.idText
             | E e -> e.Name
-            | Structure.RootAttributes _ -> "" // Atributes don't have an order
+            | Structure.RootAttributes _ -> "" // Attributes don't have an order
 
         let names = s |> List.map getName
         let mapping = s |> List.map (fun x -> getName x, x) |> Map.ofList
@@ -753,7 +759,7 @@ module TreeOps =
                         x.Get |> Option.map (getNames)) |> List.concat
                 ]   
             | Interface (_, methods) -> 
-                methods |> List.collect (fun (Method (_, types)) -> types |> List.map SynType.getName)
+                methods |> List.collect (fun (InterfaceMethod (_, types)) -> types |> List.map SynType.getName)
             | E _ -> []  
             | Structure.RootAttributes _ -> []        
 
@@ -774,7 +780,7 @@ module TreeOps =
             let graph = s |> List.collect (fun x -> dependencyCount x |> List.map (fun d -> getName x, d))
 
             s
-            |> List.map (getName >> DAG.toplogicalSort graph >> List.rev)
+            |> List.map (getName >> DAG.topologicalSort graph >> List.rev)
             |> filterDependencyPermutations  
             |> List.zipAnyLength 
 
@@ -819,7 +825,7 @@ module TreeOps =
             | SynExpr.Paren (x, r1, p, r) -> SynExpr.Paren (x, moveDown r1, p, moveDown r) |> Some
             | SynExpr.Const (x, r1) -> SynExpr.Const (x, moveDown r1) |> Some
             | SynExpr.Typed (expr, typeName, r1) -> SynExpr.Typed (expr, typeName, moveDown r1) |> Some
-            | SynExpr.Tuple (xs, rs, r)  -> SynExpr.Tuple (xs, rs, moveDown r) |> Some
+            | SynExpr.Tuple (b, xs, rs, r)  -> SynExpr.Tuple (b, xs, rs, moveDown r) |> Some
             | SynExpr.App (a,b, c, d, r) -> SynExpr.App (a, b, c, d, moveDown r) |> Some
             | SynExpr.LetOrUse (a,b,c, d, r1) -> SynExpr.LetOrUse (a,b,c, replaceSynExpr loop d, moveAndAdd r1) |> Some
             | SynExpr.Ident (r) -> SynExpr.Ident (Ident(r.idText, moveDown r.idRange)) |> Some
@@ -830,34 +836,33 @@ module TreeOps =
             | SynExpr.Sequential (a,b,c,d, r1) -> 
                 SynExpr.Sequential (a,b, replaceSynExpr loop  c, replaceSynExpr loop d,  moveAndAdd r1 ) |> Some
             | SynExpr.IfThenElse (a, b, c,d, e, r1, r2) -> 
-
                 SynExpr.IfThenElse (replaceSynExpr loop a, replaceSynExpr loop b, c |> Option.map (replaceSynExpr loop ), d,e, moveAndAdd r1, moveAndAdd r2) |> Some
             | SynExpr.ForEach (a,b,c,d,e,f,g) ->  SynExpr.ForEach (a,b,c,d, replaceSynExpr loop e, replaceSynExpr loop f, g) |> Some
             | SynExpr.TypeApp (a,b,c,d,e,f,g) -> SynExpr.TypeApp (replaceSynExpr loop a, moveDown b,c,d,e, moveDown f, moveDown g) |> Some
             | SynExpr.DotGet (a,b,c, d) -> SynExpr.DotGet (a, moveDown b, c, moveDown d)  |> Some
             | SynExpr.FromParseError (a,b) -> SynExpr.FromParseError (replaceSynExpr loop a, moveAndAdd b) |> Some
-            | SynExpr.Match (a,b,c,d,e) -> SynExpr.Match (a,b,c,d,e) |> Some
+            | SynExpr.Match (a,b,c,d) -> SynExpr.Match (a,b,c,d) |> Some
             | SynExpr.For (a,b,c,d,e,f,g) -> SynExpr.For (a,b, replaceSynExpr loop c,d, replaceSynExpr loop e, replaceSynExpr loop f,g) |> Some
             | SynExpr.DotIndexedGet (a,b,c,d) -> SynExpr.DotIndexedGet (a,b,c,d) |> Some
             | SynExpr.DotIndexedSet (a,b,c,d,f,g) -> SynExpr.DotIndexedSet (a,b,c,d,f,g) |> Some
             | SynExpr.While (a,b,c,d) -> SynExpr.While (a, replaceSynExpr loop b,c,d) |> Some
             | SynExpr.TryWith (a,b,c,d,e,f,g) -> SynExpr.TryWith (replaceSynExpr loop a,moveDown b,c, moveDown d, moveDown e,f,g) |> Some
-            | SynExpr.Lambda (a,b,c,d,e) -> SynExpr.Lambda (a,b,c, replaceSynExpr loop d, moveAndAdd e) |> Some
-            | SynExpr.LetOrUseBang (a,b,c,d,e,f,g) -> SynExpr.LetOrUseBang (a,b,c,d,replaceSynExpr loop e,replaceSynExpr loop f, moveAndAdd g) |> Some
+            | SynExpr.Lambda (a,b,c,d,e,f) -> SynExpr.Lambda (a,b,c, replaceSynExpr loop d, e, moveAndAdd f) |> Some
+            | SynExpr.LetOrUseBang (a,b,c,d,e,f,g, h) -> SynExpr.LetOrUseBang (a,b,c,d,replaceSynExpr loop e,f, replaceSynExpr loop g, moveAndAdd h) |> Some
             | SynExpr.YieldOrReturn (a,b,c) -> SynExpr.YieldOrReturn (a, replaceSynExpr loop b, moveAndAdd c) |> Some
             | _ -> None
 
         replaceSynExpr (fun tree -> 
             match tree with 
             | SynExpr.LetOrUse (a,b,c, d, r1) -> SynExpr.LetOrUse (a,b,c, replaceSynExpr loop d, moveAndAdd r1) |> Some
-            | SynExpr.LetOrUseBang (a,b,c,d,e,f,g) -> SynExpr.LetOrUseBang (a,b,c,d,replaceSynExpr loop  e,replaceSynExpr loop f, moveAndAdd g) |> Some
+            | SynExpr.LetOrUseBang (a,b,c,d,e,f,g,h) -> SynExpr.LetOrUseBang (a,b,c,d,replaceSynExpr loop  e, f,replaceSynExpr loop g,moveAndAdd  h) |> Some
             | _ -> None) tree
 
-    // For some reason fantomas does not format let bindings correclty and wants to use the let .... in statements. 
-    // This is done becuase there are not line endings. 
-    // To correclty the problem, walk the tree and bump the line number, via the range, to add a new line. 
+    // For some reason Fantomas does not format let bindings correctly and wants to use the let .... in statements. 
+    // This is done because there are not line endings. 
+    // To correctly the problem, walk the tree and bump the line number, via the range, to add a new line. 
     // Fantomas will then print the let binding with out the in keyword, and instead, move to the next line. 
-    let removeFhsarpIn file tree =
+    let removeFsharpIn file tree =
 
         match tree with
         | ParsedInput.ImplFile(ParsedImplFileInput(fn, script, name, a, b, modules, c)) ->
