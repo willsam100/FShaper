@@ -1,6 +1,6 @@
 ﻿namespace Tests
 open NUnit.Framework
-open FSharper.Core
+open FShaper.Core
 open FsUnit
 open System
 open CodeFormatter
@@ -127,7 +127,7 @@ type AsyncAwaitTests () =
         |> should equal (formatFsharpWithClass fsharp)
 
     [<Test>]
-    member this.``can convert if statements without else and additonal statements in async method`` () = 
+    member this.``can convert if statements without else and additional statements in async method`` () = 
         let csharp = 
              """
                 protected async void OnGetViewControlAsync (CancellationToken token, DocumentViewContent view)
@@ -145,7 +145,10 @@ type AsyncAwaitTests () =
              """
                 member this.OnGetViewControlAsync(token: CancellationToken, view: DocumentViewContent) =
                     async {
-                        if globalOptions = null then OnConfigurationZoomLevelChanged(null, EventArgs.Empty)
+                        if globalOptions = null then
+                            OnConfigurationZoomLevelChanged(null, EventArgs.Empty)
+                        
+                        // Content providers can provide additional content
                         NotifyContentChanged()
                         do! Load(false) |> Async.AwaitTask
                     }
@@ -155,7 +158,7 @@ type AsyncAwaitTests () =
         |> reduceIndent
         |> Converter.run 
         |> logConverted
-        |> should equal (formatFsharpWithClass fsharp)
+        |> should equal (formatFsharpWithClassWithSource fsharp)
 
 
     [<Test>]

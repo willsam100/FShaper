@@ -21,6 +21,7 @@
     <Compile Include="ClassTests.fs" />
     <Compile Include="FullFileTests.fs" />
     <Compile Include="EnumTests.fs" />
+    <Compile Include="CommentTests.fs" />
     <Compile Include="Program.fs" />
     <None Include="app.config" />
   </ItemGroup>

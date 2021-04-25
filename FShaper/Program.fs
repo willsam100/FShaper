@@ -1,8 +1,8 @@
 ﻿// Learn more about F# at http://fsharp.org
 open System
 open FSharp.Compiler.Text
+open FShaper.Core
 open Fantomas
-open FSharper.Core
 open Fantomas.FormatConfig
 open System.Text.RegularExpressions
 open Microsoft.CodeAnalysis
@@ -14,13 +14,15 @@ let main argv =
 
     if not printFsharpTree then 
         let input = System.Console.In.ReadToEnd()
-        FSharper.Core.Converter.run input |> printfn "%s"
+        FShaper.Core.Converter.run input |> printfn "%s"
 
     // Used for debugging/development. To see the the F# syntax, add here. 
     // the syntax can then be used to identity how to construct it from the CSharp syntax
     else
         let input = 
                  """
+                    module MyModule
+                    //This is a comment
                     type TipView<'T, 'Z>(s: string, i: int) =
                         inherit MvxContentPage<TipViewModel>(message)
                         do InitializeComponent()""" // Add expected F# syntax here
@@ -34,11 +36,17 @@ let main argv =
         let removeFilenameFromOutput tree = 
             tree
             |> regexReplace("\n\s+/home/user/Test.fsx", "") 
-            |> regexReplace("/home/user/Test.fsx", "") 
+            |> regexReplace("/home/user/Test.fsx", "")
+            
+            
+            
 
         tree.ToString() |> removeFilenameFromOutput |> printfn "%s"
+        printfn ""
 
-        CodeFormatter.FormatASTAsync(tree, placeholderFilename, [], input |> SourceOrigin.SourceString |> Some, {FormatConfig.Default with StrictMode = false}) |> Async.RunSynchronously |> printfn "%s"
+        CodeFormatter.FormatASTAsync(tree, placeholderFilename, [], input |> SourceOrigin.SourceString |> Some, {FormatConfig.Default with StrictMode = false})
+        |> Async.RunSynchronously
+        |> printfn "%s"
 
     0
 

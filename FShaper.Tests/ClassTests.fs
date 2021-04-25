@@ -1,7 +1,7 @@
 namespace Tests
 
 open NUnit.Framework
-open FSharper.Core
+open FShaper.Core
 open FsUnit
 open Swensen.Unquote.Assertions
 open CodeFormatter

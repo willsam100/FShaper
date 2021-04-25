@@ -1,7 +1,7 @@
 ﻿namespace Tests
 
 open NUnit.Framework
-open FSharper.Core
+open FShaper.Core
 open FsUnit
 open CodeFormatter
 
@@ -99,7 +99,7 @@ type LoopingTests () =
                 {
                     int i, j;
 
-                    if (n < 0 || n > 63) System.Environment.Exit(0);// gracefully deal with range issue
+                    if (n < 0 || n > 63) System.Environment.Exit(0);
 
                     for (c[i = 0] = 1L; i < n; c[0] = -c[0], i++)
                         for (c[1 + (j = i)] = 1L; j > 0; j--)

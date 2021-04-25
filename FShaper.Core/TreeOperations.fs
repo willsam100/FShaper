@@ -1,4 +1,4 @@
-﻿namespace FSharper.Core
+﻿namespace FShaper.Core
 open Microsoft.CodeAnalysis.CSharp
 open Microsoft.CodeAnalysis
 open System.Threading
@@ -84,20 +84,22 @@ module SynConst =
 
 module SynPat = 
 
-    let getIdentAsReturn returnType synPat = 
+    let getIdentAsReturn getLeft returnType synPat = 
         let rec loop synPat = 
             match synPat with 
             | SynPat.Attrib (a,_,_) -> loop a
             | SynPat.Typed (a,_, _) -> loop a
             | SynPat.LongIdent (a,_,_,_,_,_) -> returnType a
             | SynPat.Paren (a, _) -> loop a
+            | SynPat.Named (a,b,c,d,e)  when getLeft ->  returnType <| LongIdentWithDots ([b], []) // this is for parameters (foo = foobar), ignore foobar
             | SynPat.Named (a,_,_,_,_) -> loop a // this is for parameters (foo = foobar), ignore foo
             | x -> printfn "%A" x; sprintf "Wrong type: %A" x |> failwith
         loop synPat  
 
-    let getIdent = getIdentAsReturn (fun a -> Expr.LongIdent (false, a))      
+    let getIdent = getIdentAsReturn false (fun a -> Expr.LongIdent (false, a))      
 
-    let getName = getIdentAsReturn joinLongIdentWithDots
+    let getName = getIdentAsReturn false joinLongIdentWithDots
+    let getLeftName = getIdentAsReturn true joinLongIdentWithDots
 
     let getType synPat = 
         let rec loop synPat = 
@@ -143,6 +145,7 @@ module ParserUtil =
             | Expr.Match (b,c) -> Expr.Match (replaceExpr b,c)
             | Expr.Lambda (a,b,c,d, e) -> Expr.Lambda (a,b,c, replaceExpr d, e)
             | Expr.Paren e -> replaceExpr e |> Expr.Paren
+            | Expr.Trivia (e, t) -> replaceExpr e |> fun e -> Expr.Trivia(e, t)
             | Expr.For (b,c,d,e,f) -> Expr.For (b,replaceExpr c, d, replaceExpr e,replaceExpr f)
             | Expr.While (b,c) -> Expr.While (replaceExpr b, replaceExpr c)
             | Expr.YieldOrReturn (a, b) -> Expr.YieldOrReturn (a, replaceExpr b)
@@ -154,6 +157,7 @@ module ParserUtil =
             | Expr.CompExpr (a,b,c) -> Expr.CompExpr (a,b, replaceExpr c)
             | Expr.LetOrUseBang (b,c,d,e,f) -> Expr.LetOrUseBang (b,c,d,  replaceExpr e, replaceExpr f)
             | Expr.New (a,b,c) -> Expr.New (a,b, replaceExpr c)
+            | Expr.TryWith (a,b) -> Expr.TryWith(replaceExpr a, b)
             | e -> e
 
     let rec getFirstExpr f tree = 
@@ -174,12 +178,14 @@ module ParserUtil =
             | Expr.Match (b,c) -> getFirstExpr b
             | Expr.Lambda (a,b,c,d, e) -> getFirstExpr d
             | Expr.Paren e -> getFirstExpr e
+            | Expr.Trivia (e, _) -> getFirstExpr e
             | Expr.For (b,c,d,e,f) -> getFirstExpr c |> Option.orElse (getFirstExpr e) |> Option.orElse (getFirstExpr f)
             | Expr.While (b,c) -> getFirstExpr b |> Option.orElse (getFirstExpr c)
             | Expr.YieldOrReturn (a, b) -> getFirstExpr b
             | Expr.DoBang e -> getFirstExpr e
             | Expr.CompExpr (a,b,c) -> getFirstExpr c
             | Expr.New (a,b,c) -> getFirstExpr c
+            | Expr.TryWith (a,b) -> getFirstExpr a
             | e -> None
 
     let rec containsExpr f tree = 
@@ -201,13 +207,46 @@ module ParserUtil =
             c |> List.map (fun (MatchClause.Clause (a,b,c)) -> containsExpr c) |> List.reduce (@)
         | Expr.Lambda (a,b,c,d, e) -> containsExpr d
         | Expr.Paren e -> containsExpr e
+        | Expr.Trivia (e, t) -> containsExpr e
         | Expr.For (b,c,d,e,f) -> containsExpr c @  containsExpr e @ containsExpr f
         | Expr.While (b,c) -> containsExpr b @ containsExpr c
         | Expr.YieldOrReturn (a, b) -> containsExpr b
         | Expr.DoBang e -> containsExpr e
         | Expr.CompExpr (a,b,c) -> containsExpr c
         | Expr.New (a,b,c) -> containsExpr c
+        | Expr.TryWith (a,b) -> containsExpr a //@ (b |> List.map (fun (MatchClause.Clause (c,d,e)) -> containsExpr e) |> List.reduce (@))
         | _ -> []
+        
+    let rec foldExpr f tree : 'a list = 
+        let foldExpr = foldExpr f
+        let x = f tree
+        let result = 
+            match tree with 
+            | Expr.Sequential (s2,s3,s4) -> foldExpr s3 @ foldExpr s4
+            | Expr.Downcast (e,_) -> foldExpr e
+            | Expr.DotSet (a,b,c) -> foldExpr a @ foldExpr c
+            | Expr.DotGet (e, _) -> foldExpr e
+            | Expr.IfThenElse (a,b,c,d) -> (foldExpr a) @ (foldExpr b)
+            | Expr.LetOrUse (x,y,z,i) -> 
+                (foldExpr i) @ (z |> List.collect (fun (LetBind (a,b,c,d,e,f,g,h)) -> foldExpr h))
+            | Expr.LetOrUseBang (b,c,d,e,f) -> foldExpr e @ foldExpr f
+            | Expr.App (a,b,c,d) ->  foldExpr c @ foldExpr d
+            | Expr.ForEach (b,c,d,e,f) -> foldExpr e @ foldExpr f
+            | Expr.Match (b,c) -> 
+                c |> List.map (fun (MatchClause.Clause (a,b,c)) -> foldExpr c) |> List.reduce (@)
+            | Expr.Lambda (a,b,c,d, e) -> foldExpr d
+            | Expr.Paren e -> foldExpr e
+            | Expr.Trivia (e, t) -> foldExpr e
+            | Expr.For (b,c,d,e,f) -> foldExpr c @  foldExpr e @ foldExpr f
+            | Expr.While (b,c) -> foldExpr b @ foldExpr c
+            | Expr.YieldOrReturn (a, b) -> foldExpr b
+            | Expr.DoBang e -> foldExpr e
+            | Expr.CompExpr (a,b,c) -> foldExpr c
+            | Expr.New (a,b,c) -> foldExpr c
+            | Expr.TryWith (a,b) -> foldExpr a
+            | _ -> []
+            
+        x @ result
 
     let replaceAnyPostOrPreIncrement =
         replaceExpr 
@@ -399,6 +438,11 @@ module ParserUtil =
             | _ -> None
 
         | Expr.Paren x -> 
+            match x with
+            | FindIdent xs -> Some xs
+            | _ -> None
+            
+        | Expr.Trivia (x, _) -> 
             match x with
             | FindIdent xs -> Some xs
             | _ -> None 

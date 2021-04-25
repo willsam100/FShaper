@@ -1,11 +1,13 @@
-module FSharper.Core.Converter
+module FShaper.Core.Converter
 open FSharp.Compiler.SyntaxTree
 open FSharp.Compiler.Range
 open FSharp.Compiler.XmlDoc
+open FShaper.Core
+open Fantomas.TriviaTypes
 open Microsoft.CodeAnalysis.CSharp
 open Fantomas.FormatConfig
 open Fantomas
-open FSharper.Core.TreeOps
+open FShaper.Core.TreeOps
 open System.Text
 open Microsoft.CodeAnalysis.CSharp.Syntax
 open Fantomas.SourceOrigin
@@ -96,12 +98,15 @@ module FormatOutput =
             IsStatic = false
             Accessibility = None
             Attributes = []
+            Trivia = NoTrivia
         }
 
-    let sanitizeCode requiresReturn methodNames expr = 
-
+    let sanitizeCode requiresReturn methodNames expr =
+        let trivia = getTrivia expr
+        
         let e = 
             expr
+            |> removeTrivia
             |> simplifyTree
             |> rewriteReturnInIf 
             |> rewriteMatchIs
@@ -112,10 +117,13 @@ module FormatOutput =
             |> fixCsharpReservedNames
             |> rewriteActionOrFuncToUseCallInvoke
         match shouldWrapInComp e with 
-        | Some x ->  wrapInComp requiresReturn x e
-        | None -> e
+        | Some x ->  wrapInComp requiresReturn x e, trivia
+        | None -> e, trivia
 
-    let toMethod methodNames (x:Method) = 
+    let toMethod methodNames (x:Method) =
+        
+        let trivia = x.Trivia |> function | NoTrivia -> [] | Above s -> [x.Name, s] 
+        
         let methodName = 
             if x.IsStatic 
             then toLongIdentWithDots x.Name
@@ -150,11 +158,13 @@ module FormatOutput =
 
         let returnType = SynBindingReturnInfo.SynBindingReturnInfo (x.ReturnType, range0, [])
 
-        let transformedTree = 
-            let t = sanitizeCode x.ReturnType methodNames x.Body
+        let transformedTree, comments = 
+            let (t, comments) = sanitizeCode x.ReturnType methodNames x.Body
             match x.ReturnType with 
-            | SynType.LongIdent (x) when joinLongIdentWithDots x = "unit" -> t
-            | _ ->  Expr.Typed (t, x.ReturnType)
+            | SynType.LongIdent (x) when joinLongIdentWithDots x = "unit" -> t, comments
+            | _ ->  Expr.Typed (t, x.ReturnType), comments
+            
+        let body = transformedTree |> toSynExpr
 
 
         SynMemberDefn.Member 
@@ -172,10 +182,10 @@ module FormatOutput =
                     (methodName, None, None, 
                     Pats [namedArgs], None, range0 ), 
                 Some returnType, 
-                transformedTree |> toSynExpr,
+                body,
                 range0, 
                 NoDebugPointAtDoBinding
-            ), range0)
+            ), range0), trivia @ comments
 
     let toProperty (x:Prop) = 
 
@@ -197,7 +207,7 @@ module FormatOutput =
             }
 
         let makeGetter getter = 
-            let getter = sanitizeCode x.Type [] getter
+            let getter, comments = sanitizeCode x.Type [] getter
         
             let memberOptions = 
                 {   
@@ -223,10 +233,10 @@ module FormatOutput =
             SynMemberDefn.Member (
                 SynBinding.Binding
                     (None, NormalBinding, false, false, [], 
-                        PreXmlDocEmpty, SynValData (Some memberOptions, synVaInfo, None), headPat, Some returnInfo, getter |> toSynExpr, range0, NoDebugPointAtDoBinding), range0)   
+                        PreXmlDocEmpty, SynValData (Some memberOptions, synVaInfo, None), headPat, Some returnInfo, getter |> toSynExpr, range0, NoDebugPointAtDoBinding), range0), comments   
 
         let makeSetter setter = 
-            let setter = sanitizeCode x.Type [] setter
+            let setter, comments = sanitizeCode x.Type [] setter
             let memberOptions = 
                 {   
                     IsInstance = true
@@ -254,7 +264,7 @@ module FormatOutput =
             SynMemberDefn.Member (
                 SynBinding.Binding
                     (None, NormalBinding, false, false, [], 
-                        PreXmlDocEmpty, SynValData (Some memberOptions, synVaInfo, None), headPat, None, setter |> toSynExpr, range0, NoDebugPointAtDoBinding), range0)   
+                        PreXmlDocEmpty, SynValData (Some memberOptions, synVaInfo, None), headPat, None, setter |> toSynExpr, range0, NoDebugPointAtDoBinding), range0), comments   
 
         match x.Get, x.Set with 
         | None, None -> 
@@ -264,11 +274,24 @@ module FormatOutput =
                 ([],false, 
                     Ident (x.Name, range0), Some x.Type,
                     MemberKind.PropertyGetSet, memberFlags, PreXmlDoc.PreXmlDocEmpty, x.Access, toSynExpr typeArg, None, range0
-                      ) |> List.singleton
+                      ) |> List.singleton, []
 
-        | Some getter, None -> [makeGetter getter]
-        | None, Some setter -> [makeSetter setter;]
-        | Some getter, Some setter -> [makeGetter getter; makeSetter setter;]
+        | Some getter, None ->
+            let g, comments = makeGetter getter
+            [g], comments
+        | None, Some setter ->
+            let s, comments = makeSetter setter
+            [s], comments
+        | Some getter, Some setter ->
+            let g, commentsGet = makeGetter getter
+            let s, commentsSet = makeSetter setter
+            
+            let comments = 
+                match commentsGet, commentsSet with
+                | xs, [] -> xs
+                | _ -> failwithf "Comments are not clear: %A %A" commentsGet commentsSet
+            
+            [g; s], comments 
 
     let toDefaultClass method = 
         let x = 
@@ -321,6 +344,11 @@ module FormatOutput =
 
     let toClass (cn:Class) = 
         let att = cn.Attributes |> List.map createSynAttribute
+        
+        let classTrivia =
+            match cn.Trivia with
+            | NoTrivia -> []
+            | Above t -> [cn.Name.Name, t]
 
         let x =
             let typeVals = 
@@ -330,9 +358,9 @@ module FormatOutput =
             ComponentInfo ([{ Attributes = att; Range = range0}], typeVals, [], toIdent cn.Name.Name, PreXmlDocEmpty, true, None, range0)
 
         
-        let properties = cn.Properties |> List.collect toProperty
+        let properties, getterSetterComments = cn.Properties |> List.map toProperty |> List.unzip |> fun (props, comments) -> List.concat props, comments
         let methodNames = cn.Methods |> List.map (fun x -> (if x.IsStatic then Some cn.Name.Name else None), x.Name.Replace ("this.", ""))
-        let methods = cn.Methods |> List.map (toMethod methodNames)
+        let (methods, methodTrivia) = cn.Methods |> List.map (toMethod methodNames) |> List.unzip
         let fields = cn.Fields |> List.map toLet
 
         let interfaces = 
@@ -360,9 +388,11 @@ module FormatOutput =
                     Method.Parameters = interfaceParameters
                     Method.Attributes = []
                     Method.ReturnType = SynType.LongIdent (toLongIdentWithDots "unit")
+                    Method.Trivia = Trivia.NoTrivia
                 }
 
-                SynMemberDefn.Interface (x,method |> toMethod [] |> List.singleton |> Some, range0))
+                // TODO: fix this for comments on interfaces
+                SynMemberDefn.Interface (x,method |> toMethod [] |> fst |> List.singleton |> Some, range0))
 
         let mainCtor = 
             cn.Constructors 
@@ -526,9 +556,10 @@ module FormatOutput =
                             ], false, false, range0) |> List.singleton
                     ctors, fields, ctorInit, properties                      
 
+        let trivia = (classTrivia @ List.concat getterSetterComments @ List.concat methodTrivia)
         SynTypeDefn.TypeDefn (x, SynTypeDefnRepr.ObjectModel (TyconUnspecified, ctors @ fields @ ctorInit @ properties @ methods @ interfaces, range0), [], range0)
         |> List.singleton
-        |> (fun x -> SynModuleDecl.Types (x, range0))
+        |> (fun x -> SynModuleDecl.Types (x , range0), trivia)
 
     let toEnum (enum: Enum) =  
         let createEnumCase name synConst = 
@@ -569,23 +600,37 @@ module FormatOutput =
 
     let parseStructure = function
         | C c -> toClass c
-        | Interface (name, methods) -> (name,methods) |> toInterface |> (fun xs -> SynModuleDecl.Types ([xs], range0)) 
-        | E e -> toEnum e
+        | Interface (name, methods) -> (name,methods) |> toInterface |> (fun xs -> SynModuleDecl.Types ([xs], range0)), [] 
+        | E e -> toEnum e, []
 
-let toFsharpSynaxTree input =
+let toFsharpSyntaxTree input =
 
     let processStructures s = 
         s 
         |> TreeOps.reorderStructures
         |> List.map FormatOutput.parseStructure
+        |> List.fold (fun (trees, comments) (tree, comment) ->
+            tree :: trees, comments @ comment
+            ) ([], [])
+        |> (fun (xs,ys) -> List.rev xs, ys)
 
     let defaultNamespace = {Name = DefaultNames.namespaceName; Structures = []}
     let toNamespace ns mods decls = FormatOutput.toNamespace ns (mods @ decls)
 
-    let processNamespaces usings attributes ns = 
+    let processNamespaces usings attributes ns =
+        let usingTrivia =
+            usings |> List.choose (fun us ->
+                match us.Trivia with
+                | NoTrivia -> None
+                | Above s -> Some (us.UsingNamespace, s)
+                )
+        
         let opens = usings |> List.map FormatOutput.createOpenStatements
         let attributes = FormatOutput.createAttributeStatements attributes
-        ns |> List.map (fun ns -> ns.Structures |> processStructures |> toNamespace ns (opens @ attributes)) |> FormatOutput.toFile
+        ns |> List.map (fun ns ->
+            ns.Structures |> processStructures |> (fun (tree, comment) -> toNamespace ns (opens @ attributes) tree, comment ) )
+        |> List.unzip
+        |> fun (tree, comments) -> tree |> FormatOutput.toFile, usingTrivia @ List.concat comments
 
     let usingsAttributesStructures usings namespaces attributes s = 
         let ns = 
@@ -600,18 +645,26 @@ let toFsharpSynaxTree input =
     match input with 
     | File f -> 
         match f with 
-        | FileWithUsingNamespaceAttributeAndDefault (u, ns, a, s) -> usingsAttributesStructures u ns a s
+        | FileWithUsingNamespaceAttributeAndDefault (u, ns, a, s) ->
+            usingsAttributesStructures u ns a s
            
     | UsingStatement us -> 
-        let ns = {Name = DefaultNames.namespaceName; Structures = [] }           
-        FormatOutput.toNamespace ns [FormatOutput.createOpenStatements us] |> List.singleton |> FormatOutput.toFile
+        let ns = {Name = DefaultNames.namespaceName; Structures = [] }
+        let trivia =
+            match us.Trivia with
+            | NoTrivia ->[]
+            | Above s -> [us.UsingNamespace, s]
+                
+        FormatOutput.toNamespace ns [FormatOutput.createOpenStatements us] |> List.singleton |> FormatOutput.toFile, trivia
 
     | FsharpSyntax.Namespace ns ->
-        let decls = ns.Structures |> processStructures
-        FormatOutput.toNamespace ns decls |> List.singleton |> FormatOutput.toFile
+        let decls, comments = ns.Structures |> processStructures
+        FormatOutput.toNamespace ns decls |> List.singleton |> FormatOutput.toFile, comments
 
     | RootAttributes xs -> processNamespaces [] xs [defaultNamespace]
-    | Structures s ->  s  |> processStructures |> FormatOutput.defaultModule |> FormatOutput.toFile
+    | Structures s ->
+        let tree, comments = s |> processStructures
+        tree |> FormatOutput.defaultModule |> FormatOutput.toFile, comments
     //| Method m ->  m |> FormatOutput.toMethod [m.Name] |> FormatOutput.toDefaultClass |> List.singleton |> FormatOutput.defaultModule |> FormatOutput.toFile
     //| FSharper.Core.Field f ->  f |> Seq.head |> FormatOutput.inMethod |> FormatOutput.toMethod [] |> FormatOutput.toDefaultClass |> List.singleton |> FormatOutput.defaultModule |> FormatOutput.toFile
 
@@ -639,21 +692,74 @@ let createParsingOptionsFromFile fileName =
 let sharedChecker = lazy (FSharpChecker.Create())
 
 
-let toFsharpString validateCode config parseInput = 
-    if CodeFormatter.IsValidASTAsync parseInput |> Async.RunSynchronously then
+let isComment (line:string) =
+    line.Trim().StartsWith "//"
+    
+let markLinesWithTrivia lines =
+    lines
+    |> List.fold (fun acc line ->
+        match acc with
+        | [] ->
+            if isComment line then
+                [true, line]
+            else
+                [false, line]
+        | (_, prev)::rest ->
+            if not (isComment line) && isComment prev then
+                (true, line) :: acc
+            elif isComment line then
+                (true, line) :: acc
+            else
+                (false, line) :: acc                       
+        ) []
+    |> List.rev
+    
+let applyIndentationToComments (line:string) (comment:string) =
+    let prefix = line.ToCharArray() |> Array.takeWhile (System.Char.IsWhiteSpace) |> System.String
+    comment.Split('\n')
+    |> Array.toList
+    |> List.map (fun x ->
+        let x = x.Replace("/*", "(*").Replace("*/", "*)").TrimEnd()
+        prefix + x)
+    
+let insertTriviaIntoCode name (comment: string) linesOfCode =
+    linesOfCode
+    |> List.fold (fun (matched, acc) (hasComment, line) ->
+       if not matched then
+            printfn "Comment: %b  Line:%s" hasComment line
+       if not matched && not hasComment && line.Contains name then           
+           let comments = applyIndentationToComments line comment 
+            // We need to reverse as we are building up the acc list in reverse order
+           true, line :: (List.rev comments) @ acc
+       else matched, line :: acc ) (false, [])
+    |> snd
+    |> List.rev
+    
 
-        let source = 
-             """type Klass067803f4-3f6e-11e9-b4df-6f8305ceb4a6() =  
-                   member this.Foo() = Console.WriteLine('\n')"""
-            |> SourceString
+let rec applyTriviaToFormattedCode trivia (code: string) =
+    match trivia |> List.distinct with
+    | [] -> code
+    | (name, comment:string)::trivias ->
+        
+        printfn "------ %s :: %s --------" name comment
+        
+        code.Split '\n'
+        |> List.ofArray
+        |> markLinesWithTrivia
+        |> insertTriviaIntoCode name comment
+        |> String.concat "\n"
+        |> applyTriviaToFormattedCode trivias
             
-        printfn "----------- Output F# AST------------:\n%A\n----------------End AST----------------" parseInput
+let toFsharpString validateCode config (parseInput, trivia) = 
+    if CodeFormatter.IsValidASTAsync parseInput |> Async.RunSynchronously then
+        
+//        printfn "----------- Output F# AST------------:\n%A\n----------------End AST----------------" parseInput
 
         let tree =
                 CodeFormatter.FormatASTAsync(parseInput, DefaultNames.file, [], None, config)
                 |> Async.RunSynchronously
         
-        printfn "----------- First Format------------:\n%s\n----------------EndTree----------------" tree
+//        printfn "----------- First Format------------:\n%s\n----------------EndTree----------------" tree
         
         let tree =
             // Formatting a second time may fail. E.g when only a method without an enclosing class.
@@ -676,19 +782,9 @@ let toFsharpString validateCode config parseInput =
                 printfn "%s" <| e.ToString()
                 printfn "--------------End second Parse------------------"
                 tree
-//        printfn "Syntax Tree\n%A" parseInput
-//        printfn "Tree\n%s" tree
-//        let tree = 
-//            try
-//                let checker = FSharpChecker.Create()
-//                CodeFormatter.FormatDocumentAsync(DefaultNames.file, SourceString tree, config, FSharpParsingOptions.Default, checker) |> Async.RunSynchronously 
-//            with e -> 
-////                if validateCode || true
-////                then raise e
-////                else tree
-//                tree
-
+                
         tree
+        |> applyTriviaToFormattedCode trivia
         |> removeDefaultScaffolding
         |> (fun (x: string) ->
             
@@ -816,9 +912,9 @@ let runWithConfig validateCode (input:string) =
 
     nodes
     |> Option.bind(fun x ->  x |> Seq.fold (visitor.ParseSyntax) None)
-    |> Option.map toFsharpSynaxTree
+    |> Option.map toFsharpSyntaxTree
 //    |> Option.map(fun x -> printfn "------------------------------First Parse--------------------:\n%A\n--------------------" x; x)
-    |> Option.map(removeFsharpIn DefaultNames.file)
+    |> Option.map (removeFsharpIn DefaultNames.file)
     |> Option.map (toFsharpString validateCode config) 
     |> function 
     | Some x -> x.Trim()

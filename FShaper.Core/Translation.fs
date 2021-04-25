@@ -1,4 +1,4 @@
-﻿namespace FSharper.Core
+﻿namespace FShaper.Core
 
 open FSharp.Compiler.SyntaxTree
 open FSharp.Compiler.Range
@@ -119,75 +119,86 @@ module TreeOps =
         | One e -> SynIndexerArg.One ((e |> toSynExpr), false, range0) // TODO: review 'false' here
         
     and 
-        toSynExpr (expr:Expr): SynExpr = 
-        match expr with  
-        | Expr.Paren x -> SynExpr.Paren (toSynExpr x, range0, None, range0)
-        | Expr.Const x -> SynExpr.Const (x, range0)
-        | Expr.Typed (expr, typeName) -> SynExpr.Typed (toSynExpr expr, typeName, range0)
-        | Expr.Tuple xs -> SynExpr.Tuple (false, xs |> List.map toSynExpr, [range0], range0) // TODO review 'true' for isStrict
+        toSynExpr (expr:Expr): SynExpr =
+            match expr with  
+            | Expr.Paren x -> SynExpr.Paren (toSynExpr x, range0, None, range0)
+            | Expr.Trivia (e, t) -> toSynExpr e
+            | Expr.Const x -> SynExpr.Const (x, range0)
+            | Expr.Typed (expr, typeName) -> SynExpr.Typed (toSynExpr expr, typeName, range0)
+            | Expr.Tuple xs -> SynExpr.Tuple (false, xs |> List.map toSynExpr, [range0], range0) // TODO review 'true' for isStrict
 
-        | Expr.New (isProtected, typeName, expr) -> SynExpr.New (isProtected, typeName, toSynExpr expr, range0)
-        | Expr.While (b,c) -> SynExpr.While  (DebugPointAtWhile.No, toSynExpr b, toSynExpr c, range0)
-        | Expr.For (b,c,d,e,f ) -> SynExpr.For (DebugPointAtFor.No, b,toSynExpr c,d, toSynExpr e, toSynExpr f, range0)
+            | Expr.New (isProtected, typeName, expr) -> SynExpr.New (isProtected, typeName, toSynExpr expr, range0)
+            | Expr.While (b,c) -> SynExpr.While  (DebugPointAtWhile.No, toSynExpr b, toSynExpr c, range0)
+            | Expr.For (b,c,d,e,f ) -> SynExpr.For (DebugPointAtFor.No, b,toSynExpr c,d, toSynExpr e, toSynExpr f, range0)
 
-        | Expr.ForEach (b,c,d,e,f) -> SynExpr.ForEach (DebugPointAtFor.No, b,c,toSynPat d,toSynExpr e, toSynExpr f,range0)
+            | Expr.ForEach (b,c,d,e,f) -> SynExpr.ForEach (DebugPointAtFor.No, b,c,toSynPat d,toSynExpr e, toSynExpr f,range0)
 
-        | Expr.ArrayOrListOfSeqExpr (isArray, expr) -> SynExpr.ArrayOrListOfSeqExpr (isArray, toSynExpr expr, range0)
-        | Expr.CompExpr (isArrayOrList, isNotNakedRefCell, expr) -> SynExpr.CompExpr (isArrayOrList, isNotNakedRefCell, toSynExpr expr, range0)
+            | Expr.ArrayOrListOfSeqExpr (isArray, expr) -> SynExpr.ArrayOrListOfSeqExpr (isArray, toSynExpr expr, range0)
+            | Expr.CompExpr (isArrayOrList, isNotNakedRefCell, expr) -> SynExpr.CompExpr (isArrayOrList, isNotNakedRefCell, toSynExpr expr, range0)
 
-        | Expr.Lambda (a,b,c,d, e) -> SynExpr.Lambda (a,b,c, toSynExpr d, e, range0)  //of  fromMethod:bool * inLambdaSeq:bool * args:SynSimplePats * body:Expr
+            | Expr.Lambda (a,b,c,d, e) -> SynExpr.Lambda (a,b,c, toSynExpr d, e, range0)  //of  fromMethod:bool * inLambdaSeq:bool * args:SynSimplePats * body:Expr
 
-        //| Assert of expr:Expr
-        | Expr.Match (b,c) -> SynExpr.Match (DebugPointForBinding.NoDebugPointAtDoBinding, toSynExpr b,c |> List.map toSynMatchExpr, range0)
+            //| Assert of expr:Expr
+            | Expr.Match (b,c) -> SynExpr.Match (DebugPointForBinding.NoDebugPointAtDoBinding, toSynExpr b,c |> List.map toSynMatchExpr, range0)
 
-        | Expr.App (a,b,c,d) -> SynExpr.App (a,b, toSynExpr c, toSynExpr d, range0)
-        | Expr.TypeApp (a,b) -> SynExpr.TypeApp (toSynExpr a, range0, b, [], None, range0, range0)
+            | Expr.App (a,b,c,d) -> SynExpr.App (a,b, toSynExpr c, toSynExpr d, range0)
+            | Expr.TypeApp (a,b) -> SynExpr.TypeApp (toSynExpr a, range0, b, [], None, range0, range0)
 
-        | Expr.LetOrUse (a,b,c,d) -> // of isRecursive:bool * isUse:bool * bindings:SynBinding list * body:Expr
+            | Expr.LetOrUse (a,b,c,d) -> // of isRecursive:bool * isUse:bool * bindings:SynBinding list * body:Expr
 
-            SynExpr.LetOrUse (a,b,c |> List.map toBinding, toSynExpr d, range0)
+                SynExpr.LetOrUse (a,b,c |> List.map toBinding, toSynExpr d, range0)
 
-        | Expr.LetOrUseBang (b,c,d,e,f) -> SynExpr.LetOrUseBang (NoDebugPointAtDoBinding,b,c,d, toSynExpr e, [], toSynExpr f, range0)
+            | Expr.LetOrUseBang (b,c,d,e,f) -> SynExpr.LetOrUseBang (NoDebugPointAtDoBinding,b,c,d, toSynExpr e, [], toSynExpr f, range0)
 
-        | Expr.TryWith (a,b) -> SynExpr.TryWith (toSynExpr a,range0, b |> List.map toSynMatchExpr, range0, range0, DebugPointAtTry.No, DebugPointAtWith.No)
+            | Expr.TryWith (a,b) -> SynExpr.TryWith (toSynExpr a,range0, b |> List.map toSynMatchExpr, range0, range0, DebugPointAtTry.No, DebugPointAtWith.No)
 
-        //| TryFinally of tryExpr:Expr * finallyExpr:Expr * trySeqPoint:SequencePointInfoForTry * finallySeqPoint:SequencePointInfoForFinally
+            //| TryFinally of tryExpr:Expr * finallyExpr:Expr * trySeqPoint:SequencePointInfoForTry * finallySeqPoint:SequencePointInfoForFinally
 
-        //| Lazy of Expr
+            //| Lazy of Expr
 
-        | Expr.Sequential (b,c,d) -> SynExpr.Sequential (DebugPointAtSequential.ExprOnly,b,toSynExpr c,toSynExpr d, range0)
+            | Expr.Sequential (b,c,d) -> SynExpr.Sequential (DebugPointAtSequential.ExprOnly,b,toSynExpr c,toSynExpr d, range0)
 
-        | Expr.IfThenElse (a,b,c,d) -> SynExpr.IfThenElse (toSynExpr a, toSynExpr b,c |> Option.map toSynExpr, NoDebugPointAtDoBinding ,d, range0, range0) 
+            | Expr.IfThenElse (a,b,c,d) -> SynExpr.IfThenElse (toSynExpr a, toSynExpr b,c |> Option.map toSynExpr, NoDebugPointAtDoBinding ,d, range0, range0) 
 
-        | Expr.Ident s -> SynExpr.Ident (Ident(s, range0))
-        | Expr.LongIdent (a,b) -> SynExpr.LongIdent (a,b, None, range0)
+            | Expr.Ident s -> SynExpr.Ident (Ident(s, range0))
+            | Expr.LongIdent (a,b) -> SynExpr.LongIdent (a,b, None, range0)
 
-        | Expr.LongIdentSet (id, e) -> SynExpr.LongIdentSet (id, toSynExpr e, range0) //of longDotId:LongIdentWithDots * expr:Expr
-        | Expr.DotGet (e,a) -> SynExpr.DotGet (toSynExpr e, range0, a, range0)
-        //| DotSet of Expr * longDotId:LongIdentWithDots * Expr
-        | Expr.Set (left, right) -> SynExpr.Set (toSynExpr left, toSynExpr right, range0)
-        | Expr.DotIndexedGet (a,b) -> SynExpr.DotIndexedGet (toSynExpr a,b |> List.map toSynIndexerArg, range0,range0) //  of Expr * SynIndexerArg list
+            | Expr.LongIdentSet (id, e) -> SynExpr.LongIdentSet (id, toSynExpr e, range0) //of longDotId:LongIdentWithDots * expr:Expr
+            | Expr.DotGet (e,a) -> SynExpr.DotGet (toSynExpr e, range0, a, range0)
+            //| DotSet of Expr * longDotId:LongIdentWithDots * Expr
+            | Expr.Set (left, right) -> SynExpr.Set (toSynExpr left, toSynExpr right, range0)
+            | Expr.DotIndexedGet (a,b) -> SynExpr.DotIndexedGet (toSynExpr a,b |> List.map toSynIndexerArg, range0,range0) //  of Expr * SynIndexerArg list
 
-        | Expr.DotIndexedSet (a,b,c) -> SynExpr.DotIndexedSet (toSynExpr a, b |> List.map toSynIndexerArg , toSynExpr c, range0, range0, range0)
-        //| NamedIndexedPropertySet of longDotId:LongIdentWithDots * Expr * Expr
-        //| TypeTest of  expr:Expr * typeName:SynType
-        //| Upcast of  expr:Expr * typeName:SynType 
-        | Expr.Downcast (a,b) -> SynExpr.Downcast (toSynExpr a,b,range0)
-        //| InferredUpcast of  expr:Expr 
+            | Expr.DotIndexedSet (a,b,c) -> SynExpr.DotIndexedSet (toSynExpr a, b |> List.map toSynIndexerArg , toSynExpr c, range0, range0, range0)
+            //| NamedIndexedPropertySet of longDotId:LongIdentWithDots * Expr * Expr
+            //| TypeTest of  expr:Expr * typeName:SynType
+            //| Upcast of  expr:Expr * typeName:SynType 
+            | Expr.Downcast (a,b) -> SynExpr.Downcast (toSynExpr a,b,range0)
+            //| InferredUpcast of  expr:Expr 
 
-        //| InferredDowncast of  expr:Expr 
-        | Expr.Null -> SynExpr.Null range0
+            //| InferredDowncast of  expr:Expr 
+            | Expr.Null -> SynExpr.Null range0
 
-        | Expr.YieldOrReturn (a,b) -> SynExpr.YieldOrReturn (a, toSynExpr b, range0)
-        //| AddressOf of  isByref:bool * Expr 
-        //| TraitCall of SynTypar list * SynMemberSig * Expr 
-        //| LetOrUseBang    of bindSeqPoint:SequencePointInfoForBinding * isUse:bool * isFromSource:bool * SynPat * Expr * Expr
+            | Expr.YieldOrReturn (a,b) -> SynExpr.YieldOrReturn (a, toSynExpr b, range0)
+            //| AddressOf of  isByref:bool * Expr 
+            //| TraitCall of SynTypar list * SynMemberSig * Expr 
+            //| LetOrUseBang    of bindSeqPoint:SequencePointInfoForBinding * isUse:bool * isFromSource:bool * SynPat * Expr * Expr
 
-        | Expr.DoBang e -> SynExpr.DoBang (toSynExpr e, range0)
-        //| Fixed of expr:Expr
+            | Expr.DoBang e -> SynExpr.DoBang (toSynExpr e, range0)
+            //| Fixed of expr:Expr
 
-        | Expr.TypeTest (a,b) -> SynExpr.TypeTest (toSynExpr a,b,range0)
-        //| Expr.ReturnFromIf e -> toSynExpr e //SynExpr.Const (SynConst.Unit, range0)
+            | Expr.TypeTest (a,b) -> SynExpr.TypeTest (toSynExpr a,b,range0)
+            //| Expr.ReturnFromIf e -> toSynExpr e //SynExpr.Const (SynConst.Unit, range0)
+            
+    let rec getName (expr:Expr): string list = 
+        foldExpr (function
+           | Expr.LongIdent (a,b) -> [joinLongIdentWithDots b]
+           | Expr.LongIdentSet (a,b) -> [joinLongIdentWithDots a]
+           | Expr.Set (a, b) -> getName a
+           | Expr.Ident a -> [a]
+           | Expr.LetOrUse (a, b, c, d) -> c |> List.map (fun (LetBind (_,_,_,_,_,_, pat,_)) -> pat |> toSynPat |> SynPat.getLeftName) |> List.truncate 1
+           | _ -> []
+           ) expr
 
     let rec (|TypeNameContains|_|) text v = 
         match v with 
@@ -678,6 +689,38 @@ module TreeOps =
             | Expr.Paren (Expr.Tuple []) -> Expr.Const SynConst.Unit |> Some
             | Expr.Tuple [] -> Expr.Const SynConst.Unit |> Some
             | _ -> None)
+        
+    let getTrivia expr =
+        foldExpr (fun x ->
+            match x with
+            | Expr.Trivia (e, t) ->
+                match t with
+                | NoTrivia -> [NoTrivia]
+                | Above s ->
+                    let name = getName e |> List.head
+                    [Above (name, s)]
+            | _ -> []) expr
+        |> List.choose (function
+            | NoTrivia -> None
+            | Above t -> Some t)
+        
+    let rec removeTrivia expr =
+        let result =
+            replaceExpr (function
+                | Expr.Trivia (e,_) -> Some e
+                | _ -> None) expr
+            
+        let hasTrivia =
+            result
+            |> containsExpr
+                  (function
+                    | Expr.Trivia _ -> true
+                    | _ -> false) 
+
+        if hasTrivia then
+            removeTrivia result
+        else result
+      
 
     let correctXamarinFormsPage u ns =
         if u |> List.exists (fun x -> x.UsingNamespace.Contains "Xamarin.Forms") then 
@@ -862,7 +905,7 @@ module TreeOps =
     // This is done because there are not line endings. 
     // To correctly the problem, walk the tree and bump the line number, via the range, to add a new line. 
     // Fantomas will then print the let binding with out the in keyword, and instead, move to the next line. 
-    let removeFsharpIn file tree =
+    let removeFsharpIn file (tree, trivia) =
 
         match tree with
         | ParsedInput.ImplFile(ParsedImplFileInput(fn, script, name, a, b, modules, c)) ->
@@ -904,5 +947,5 @@ module TreeOps =
                                         | x -> x)) )
                         SynModuleDecl.Types (a,b)
                     | x -> x ) )
-            ParsedImplFileInput(fn, script, name, a, b, modules, c) |> ParsedInput.ImplFile
+            ParsedImplFileInput(fn, script, name, a, b, modules, c) |> ParsedInput.ImplFile, trivia
         | _ -> failwith "F# Interface file (*.fsi) not supported."

@@ -3,8 +3,13 @@
 // The tree is then re-written to be legal F# syntax, and translate to the F# AST. 
 // The tree also does not require some things, most importantly a range - Fantomas is used to format the code
 
-namespace FSharper.Core
+namespace FShaper.Core
 open FSharp.Compiler.SyntaxTree
+
+type Trivia<'a> =
+    | NoTrivia
+//    | Inline of string
+    | Above of 'a
 
 [<RequireQualifiedAccess>]
 module DefaultNames = 
@@ -83,6 +88,8 @@ and
     /// Parenthesized expressions. Kept in AST to distinguish A.M((x,y))
     /// from A.M(x,y), among other things.
     | Paren of expr:Expr
+    
+    | Trivia of expr:Expr * Trivia<string>
 
     /// F# syntax: 1, 1.3, () etc.
     | Const of constant:SynConst
@@ -351,6 +358,7 @@ type Method = {
     IsStatic:bool
     Accessibility:SynAccess option
     Attributes: (LongIdentWithDots * Expr option) list
+    Trivia: Trivia<string>
 }
 
 type Prop = {
@@ -396,6 +404,7 @@ type Class = {
     BaseClass: SynType option
     ImplementInterfaces: SynType list
     TypeParameters:string list
+    Trivia: Trivia<string>
 } with 
     static member Empty() = {
         Name = { Name = DefaultNames.className; Generics = []}
@@ -407,6 +416,7 @@ type Class = {
         BaseClass = None
         ImplementInterfaces = []
         TypeParameters = []
+        Trivia = NoTrivia
     }
 
 type Enum = {
@@ -421,6 +431,7 @@ type InterfaceMethod = InterfaceMethod of name:Ident * parameters:SynType list
 
 type UsingStatement = {
     UsingNamespace:string
+    Trivia: Trivia<string>
 }
 
 type Structure = 

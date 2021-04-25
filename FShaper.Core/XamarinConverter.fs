@@ -1,4 +1,4 @@
-module FSharper.Core.XamarinConverter
+module FShaper.Core.XamarinConverter
 
 open System
 open System.IO 

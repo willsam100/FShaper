@@ -1,7 +1,7 @@
 namespace Tests
 open CodeFormatter
 open NUnit.Framework
-open FSharper.Core
+open FShaper.Core
 open FsUnit
 open Swensen.Unquote.Assertions
 
@@ -10,13 +10,21 @@ type StatementTests () =
 
     [<Test>]
     member this.``using statements convert to open statements`` () = 
-        """
+        let csharp = 
+             """
                 using MvvmCross.Forms.Views;
-           using TipCalc.Core.ViewModels;""" 
-        |> Converter.run |> should equal (
-            formatFsharp 
-               "open MvvmCross.Forms.Views
-                open TipCalc.Core.ViewModels")
+                using TipCalc.Core.ViewModels;"""
+
+        let fsharp = 
+            """
+                open MvvmCross.Forms.Views
+                open TipCalc.Core.ViewModels"""
+                   
+        csharp
+        |> reduceIndent
+        |> Converter.run 
+        |> logConverted
+        |> should equal (formatFsharp fsharp)
 
     [<Test>]
     member this.``array initialization`` () = 
@@ -152,3 +160,42 @@ type StatementTests () =
         |> Converter.runWithConfig false
         |> logConverted
         |> should equal (formatFsharp fsharp)
+        
+
+    [<Test>]
+    member this.``console print line`` () = 
+        let csharp = 
+             """
+                Console.Write($"{row[i]}\t");"""
+    
+        let fsharp = 
+             """
+                Console.Write(sprintf "%O\t" (row.[i]))"""
+
+        csharp
+        |> reduceIndent
+        |> Converter.runWithConfig false
+        |> logConverted
+        |> should equal (formatFsharp fsharp)
+        
+        
+    [<Test>]
+    member this.``convert generic array`` () = 
+        let csharp = 
+             """
+                var countSelectColumn = transformedData.GetColumn<float[]>(
+                transformedData.Schema[columnName]);"""
+    
+        let fsharp = 
+             """
+                let mutable countSelectColumn = transformedData.GetColumn<float32 []>(transformedData.Schema.[columnName])
+                ()"""
+
+        csharp
+        |> reduceIndent
+        |> Converter.runWithConfig false
+        |> logConverted
+        |> should equal (formatFsharp fsharp)
+        
+        
+        

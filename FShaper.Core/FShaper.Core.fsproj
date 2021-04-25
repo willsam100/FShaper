@@ -1,7 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
-    <RootNamespace>FSharper.Core</RootNamespace>
   </PropertyGroup>
   <PropertyGroup>
     <DisableAutoSetFscCompilerPath>true</DisableAutoSetFscCompilerPath>

@@ -1,7 +1,7 @@
 namespace Tests
 
 open NUnit.Framework
-open FSharper.Core
+open FShaper.Core
 open FsUnit
 open Swensen.Unquote.Assertions
 open CodeFormatter
@@ -214,6 +214,8 @@ type FullFileTests () =
                 open MvvmCross.ViewModels
 
                 [<Android.Runtime.Preserve(AllMembers = true)>]
+                // This class is never actually executed, but when Xamarin linking is enabled it does how to ensure types and properties
+                // are preserved in the deployed app
                 type LinkerPleaseInclude() =
                     member this.Include(button: Button) = button.Click.AddHandler<_>(fun (s, e) -> button.Text <- button.Text + "")
                     member this.Include(checkBox: CheckBox) =
@@ -283,7 +285,7 @@ type FullFileTests () =
         |> reduceIndent
         |> Converter.run 
         |> logConverted
-        |> should equal (formatFsharp fsharp)
+        |> should equal (formatFsharpWithSource fsharp)
 
 
     [<Test>]

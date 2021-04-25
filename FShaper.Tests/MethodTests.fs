@@ -1,7 +1,7 @@
 namespace Tests
 open CodeFormatter
 open NUnit.Framework
-open FSharper.Core
+open FShaper.Core
 open FsUnit
 open Swensen.Unquote.Assertions
 
@@ -116,6 +116,7 @@ type MethodTests () =
                 member this.OnQuickFixCommand() =
                     if not AnalysisOptions.EnableFancyFeatures
                        || smartTagMarginMarker = null then
+                        //Fixes = RefactoringService.GetValidActions (Editor, DocumentContext, Editor.CaretLocation).Result;
                         PopupQuickFixMenu(null, null)
                         ()
                     else
@@ -126,7 +127,7 @@ type MethodTests () =
         |> reduceIndent
         |> Converter.run 
         |> logConverted
-        |> should equal (formatFsharpWithClass fsharp)
+        |> should equal (formatFsharpWithClassWithSource fsharp)
         
     [<Test>]
     member this.``create class instance`` () = 
@@ -254,6 +255,7 @@ type MethodTests () =
                 member this.OnQuickFixCommand() =
                     if not AnalysisOptions.EnableFancyFeatures
                        || smartTagMarginMarker = null then
+                        //Fixes = RefactoringService.GetValidActions (Editor, DocumentContext, Editor.CaretLocation).Result;
                         PopupQuickFixMenu(null, null)
                         ()
                     else
@@ -264,7 +266,7 @@ type MethodTests () =
         |> reduceIndent
         |> Converter.run 
         |> (fun x -> printfn "\n------------------------CONVERTED------------------------\n%s\n" x; x)
-        |> should equal (formatFsharpWithClass fsharp)
+        |> should equal (formatFsharpWithClassWithSource fsharp)
 
     [<Test>]
     member this.``convert multiple if statements with early returns`` () = 
